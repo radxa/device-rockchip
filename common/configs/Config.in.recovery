@@ -1,0 +1,50 @@
+#
+
+comment "Recovery depends on linux kernel"
+	depends on !RK_KERNEL
+
+if RK_KERNEL
+
+menu "Recovery (based on buildroot)"
+
+config RK_RECOVERY
+	bool "recovery"
+	default y if !RK_RTOS
+
+if RK_RECOVERY
+
+config RK_RECOVERY_BASE_CFG
+	string "buildroot recovery base cfg (rockchip_<cfg>_recovery_defconfig)"
+	default "" if RK_AB_UPDATE
+	default RK_CHIP if RK_CHIP_FAMILY = "rk3566_rk3568"
+	default RK_CHIP_FAMILY
+	help
+	  Base name of buildroot defconfig for recovery.
+
+config RK_RECOVERY_CFG
+	string
+	default "rockchip_${RK_CHIP_FAMILY}_recovery" \
+		if RK_RECOVERY_BASE_CFG = ""
+	default "rockchip_${RK_RECOVERY_BASE_CFG}_recovery"
+
+config RK_RECOVERY_INITRD_TYPE
+	string "recovery ramdisk filesystem type (cpio/cpio.gz/romfs)"
+	default "cpio.gz"
+
+if RK_USE_FIT_IMG
+
+config RK_RECOVERY_FIT_ITS_NAME
+	string "its script for FIT recovery image"
+	default "boot4recovery.its"
+
+config RK_RECOVERY_FIT_ITS
+	string
+	default "$RK_CHIP_DIR/$RK_RECOVERY_FIT_ITS_NAME"
+
+endif
+
+endif
+
+endmenu # Recovery
+
+endif

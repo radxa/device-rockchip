@@ -1,0 +1,59 @@
+#
+
+comment "Rootfs system depends on linux kernel"
+	depends on !RK_KERNEL
+
+if RK_KERNEL
+
+menu "Rootfs"
+
+config RK_ROOTFS
+	bool "rootfs"
+	default y if !RK_RTOS
+
+if RK_ROOTFS
+
+source "Config.in.buildroot"
+source "Config.in.yocto"
+source "Config.in.debian"
+
+config RK_ROOTFS_SYSTEM
+	string
+	default "buildroot" if RK_ROOTFS_SYSTEM_BUILDROOT
+	default "debian" if RK_ROOTFS_SYSTEM_DEBIAN
+	default "yocto" if RK_ROOTFS_SYSTEM_YOCTO
+
+choice
+	prompt "default rootfs system"
+	help
+	  Default rootfs system.
+
+config RK_ROOTFS_SYSTEM_BUILDROOT
+	bool "buildroot"
+	depends on RK_BUILDROOT
+
+config RK_ROOTFS_SYSTEM_DEBIAN
+	bool "debian"
+	depends on RK_DEBIAN
+
+config RK_ROOTFS_SYSTEM_YOCTO
+	bool "yocto"
+	depends on RK_YOCTO
+
+endchoice
+
+config RK_ROOTFS_TYPE
+	string "rootfs filesystem type"
+	default "cpio.gz" if RK_ROOTFS_INITRD
+	default "ext4"
+
+config RK_ROOTFS_INITRD
+	bool "init ramfs/ramdisk for rootfs"
+
+source "Config.in.post-rootfs"
+
+endif
+
+endmenu # Rootfs
+
+endif
