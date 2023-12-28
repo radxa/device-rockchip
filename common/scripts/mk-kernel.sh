@@ -14,16 +14,16 @@ update_kernel()
 	KERNEL_CONFIG="RK_KERNEL_VERSION=\"$RK_KERNEL_VERSION\""
 	if ! grep -q "^$KERNEL_CONFIG$" "$RK_CONFIG"; then
 		sed -i "s/^RK_KERNEL_VERSION=.*/$KERNEL_CONFIG/" "$RK_CONFIG"
-		"$SCRIPTS_DIR/mk-config.sh" olddefconfig &>/dev/null
+		"$RK_SCRIPTS_DIR/mk-config.sh" olddefconfig &>/dev/null
 	fi
 
 	[ "$(kernel_version)" != "$RK_KERNEL_VERSION" ] || return 0
 
 	# Update kernel
 	KERNEL_DIR=kernel-$RK_KERNEL_VERSION
-	echo "switching to $KERNEL_DIR"
+	notice "switching to $KERNEL_DIR"
 	if [ ! -d "$KERNEL_DIR" ]; then
-		echo "$KERNEL_DIR not exist!"
+		error "$KERNEL_DIR not exist!"
 		exit 1
 	fi
 
@@ -33,24 +33,24 @@ update_kernel()
 
 do_build()
 {
-	if [ "$DRY_RUN" ]; then
-		echo -e "\e[35mCommands of building $1:\e[0m"
-	else
-		echo "=========================================="
-		echo "          Start building $1"
-		echo "=========================================="
-	fi
+	check_config RK_KERNEL RK_KERNEL_CFG || false
 
-	check_config RK_KERNEL_DTS_NAME RK_KERNEL_CFG RK_BOOT_IMG || return 0
+	if [ "$DRY_RUN" ]; then
+		notice "Commands of building $1:"
+	else
+		message "=========================================="
+		message "          Start building $1"
+		message "=========================================="
+	fi
 
 	run_command $KMAKE $RK_KERNEL_CFG $RK_KERNEL_CFG_FRAGMENTS
 
 	if [ -z "$DRY_RUN" ]; then
-		"$SCRIPTS_DIR/check-kernel.sh"
+		"$RK_SCRIPTS_DIR/check-kernel.sh"
 	fi
 
 	case "$1" in
-		kernel-config)
+		kernel-config | kconfig)
 			KERNEL_CONFIG_DIR="kernel/arch/$RK_KERNEL_ARCH/configs"
 			run_command $KMAKE menuconfig
 			run_command $KMAKE savedefconfig
@@ -61,25 +61,83 @@ do_build()
 			run_command $KMAKE "$RK_KERNEL_DTS_NAME.img"
 
 			# The FIT image for initrd would be packed in rootfs stage
-			if [ -n "$RK_BOOT_FIT_ITS" ]; then
-				if [ -z "$RK_ROOTFS_INITRD" ]; then
-					run_command \
-						"$SCRIPTS_DIR/mk-fitimage.sh" \
-						"kernel/$RK_BOOT_IMG" \
-						"$RK_BOOT_FIT_ITS" \
-						"$RK_KERNEL_IMG"
-				fi
+			if [ -n "$RK_BOOT_FIT_ITS" ] && \
+				[ -z "$RK_ROOTFS_INITRD" ]; then
+				run_command "$RK_SCRIPTS_DIR/mk-fitimage.sh" \
+					"kernel/$RK_BOOT_IMG" \
+					"$RK_BOOT_FIT_ITS" \
+					"$RK_KERNEL_IMG" "$RK_KERNEL_DTB" \
+					"kernel/resource.img"
 			fi
 
-			if [ "$RK_WIFIBT_CHIP" ] && [ -r "$RK_KERNEL_DTB" ] && \
+			if [ "$RK_SECURITY" ]; then
+				if [ "$RK_SECURITY_CHECK_BASE" ]; then
+					run_command \
+						"$RK_SCRIPTS_DIR/mk-security.sh" \
+						sign boot "kernel/$RK_BOOT_IMG" \
+						$RK_FIRMWARE_DIR/
+				fi
+			else
+				run_command ln -rsf "kernel/$RK_BOOT_IMG" \
+					"$RK_FIRMWARE_DIR/boot.img"
+			fi
+
+			[ -z "$DRY_RUN" ] || return 0
+
+			"$RK_SCRIPTS_DIR/check-power-domain.sh"
+			"$RK_SCRIPTS_DIR/check-security.sh" kernel dts
+
+			if [ "$RK_WIFIBT_CHIP" ] && \
 				! grep -wq wireless-bluetooth "$RK_KERNEL_DTB"; then
-				echo -e "\e[35m"
-				echo "Missing wireless-bluetooth in $RK_KERNEL_DTS!"
-				echo -e "\e[0m"
+				error "Missing wireless-bluetooth in $RK_KERNEL_DTS!"
 			fi
 			;;
 		modules) run_command $KMAKE modules ;;
 	esac
+}
+
+build_recovery_kernel()
+{
+	check_config RK_KERNEL || false
+
+	if [ "$DRY_RUN" ]; then
+		notice "Commands of building $1:"
+	else
+		message "=========================================="
+		message "          Start building $1"
+		message "=========================================="
+	fi
+
+	if [ -z "$RK_KERNEL_RECOVERY_CFG" ]; then
+		RECOVERY_KERNEL_DIR=kernel
+		do_build kernel
+	else
+		RECOVERY_KERNEL_DIR="$RK_OUTDIR/recovery-kernel"
+		run_command mkdir -p "$RECOVERY_KERNEL_DIR"
+
+		# HACK: Fake mrproper
+		run_command tar cf "$RK_OUTDIR/kernel.tar" \
+			--remove-files --ignore-failed-read \
+			kernel/.config kernel/include/config \
+			kernel/arch/$RK_KERNEL_ARCH/include/generated
+
+		KMAKE="$KMAKE O=$RECOVERY_KERNEL_DIR"
+		run_command $KMAKE $RK_KERNEL_RECOVERY_CFG
+		run_command $KMAKE "$RK_KERNEL_DTS_NAME.img"
+
+		run_command tar xf "$RK_OUTDIR/kernel.tar"
+		run_command rm -f "$RK_OUTDIR/kernel.tar"
+	fi
+
+	run_command ln -rsf \
+		"$RECOVERY_KERNEL_DIR/${RK_KERNEL_IMG#kernel/}" \
+		"$RK_OUTDIR/recovery-kernel.img"
+	run_command ln -rsf \
+		"$RECOVERY_KERNEL_DIR/${RK_KERNEL_DTB#kernel/}" \
+		"$RK_OUTDIR/recovery-kernel.dtb"
+	run_command ln -rsf \
+		"$RECOVERY_KERNEL_DIR/resource.img" \
+		"$RK_OUTDIR/recovery-resource.img"
 }
 
 # Hooks
@@ -91,16 +149,22 @@ usage_hook()
 	done
 
 	echo -e "kernel[:cmds]                    \tbuild kernel"
+	echo -e "recovery-kernel[:cmds]           \tbuild kernel for recovery"
 	echo -e "modules[:cmds]                   \tbuild kernel modules"
 	echo -e "linux-headers[:cmds]             \tbuild linux-headers"
 	echo -e "kernel-config[:cmds]             \tmodify kernel defconfig"
-	echo -e "kernel-make[:<arg1>:<arg2>]      \trun kernel make (alias kmake)"
+	echo -e "kconfig[:cmds]                   \talias of kernel-config"
+	echo -e "kernel-make[:<arg1>:<arg2>]      \trun kernel make"
+	echo -e "kmake[:<arg1>:<arg2>]            \talias of kernel-make"
 }
 
 clean_hook()
 {
 	[ ! -d kernel ] || make -C kernel distclean
-	rm -f "$RK_OUTDIR/linux-headers.tar"
+
+	rm -rf "$RK_OUTDIR/recovery-*"
+	rm -f "$RK_FIRMWARE_DIR/linux-headers.tar"
+	rm -rf "$RK_FIRMWARE_DIR/boot.img"
 }
 
 INIT_CMDS="default $KERNELS"
@@ -112,10 +176,10 @@ init_hook()
 	# Priority: cmdline > custom env > .config > current kernel/ symlink
 	if echo $1 | grep -q "^kernel-"; then
 		export RK_KERNEL_VERSION=${1#kernel-}
-		echo "Using kernel version($RK_KERNEL_VERSION) from cmdline"
+		notice "Using kernel version($RK_KERNEL_VERSION) from cmdline"
 	elif [ "$RK_KERNEL_VERSION" ]; then
 		export RK_KERNEL_VERSION=${RK_KERNEL_VERSION//\"/}
-		echo "Using kernel version($RK_KERNEL_VERSION) from environment"
+		notice "Using kernel version($RK_KERNEL_VERSION) from environment"
 	else
 		load_config RK_KERNEL_VERSION
 	fi
@@ -123,14 +187,14 @@ init_hook()
 	update_kernel
 }
 
-PRE_BUILD_CMDS="kernel-config kernel-make kmake"
+PRE_BUILD_CMDS="kernel-config kconfig kernel-make kmake"
 pre_build_hook()
 {
-	check_config RK_KERNEL_CFG || return 0
-	source "$SCRIPTS_DIR/kernel-helper"
+	check_config RK_KERNEL RK_KERNEL_CFG || false
+	source "$RK_SCRIPTS_DIR/kernel-helper"
 
-	echo "Toolchain for kernel:"
-	echo "${RK_KERNEL_TOOLCHAIN:-gcc}"
+	message "Toolchain for kernel:"
+	message "${RK_KERNEL_TOOLCHAIN:-gcc}"
 	echo
 
 	case "$1" in
@@ -139,11 +203,11 @@ pre_build_hook()
 			[ "$1" != cmds ] || shift
 
 			if [ "$DRY_RUN" ]; then
-				echo -e "\e[35mCommands of building ${@:-stuff}:\e[0m"
+				notice "Commands of building ${@:-stuff}:"
 			else
-				echo "=========================================="
-				echo "          Start building $@"
-				echo "=========================================="
+				message "=========================================="
+				message "          Start building $@"
+				message "=========================================="
 			fi
 
 			if [ ! -r kernel/.config ]; then
@@ -152,7 +216,7 @@ pre_build_hook()
 			fi
 			run_command $KMAKE $@
 			;;
-		kernel-config)
+		kernel-config | kconfig)
 			do_build $@
 			;;
 	esac
@@ -167,35 +231,26 @@ pre_build_hook_dry()
 	DRY_RUN=1 pre_build_hook $@
 }
 
-BUILD_CMDS="$KERNELS kernel modules"
+BUILD_CMDS="$KERNELS kernel recovery-kernel modules"
 build_hook()
 {
-	check_config RK_KERNEL_DTS_NAME RK_KERNEL_CFG RK_BOOT_IMG || return 0
-	source "$SCRIPTS_DIR/kernel-helper"
+	check_config RK_KERNEL RK_KERNEL_CFG || false
+	source "$RK_SCRIPTS_DIR/kernel-helper"
 
-	echo "Toolchain for kernel:"
-	echo "${RK_KERNEL_TOOLCHAIN:-gcc}"
+	message "Toolchain for kernel:"
+	message "${RK_KERNEL_TOOLCHAIN:-gcc}"
 	echo
 
-	if echo $1 | grep -q "^kernel-"; then
-		if [ "$RK_KERNEL_VERSION" != "${1#kernel-}" ]; then
-			echo -ne "\e[35m"
-			echo "Kernel version overrided: " \
-				"$RK_KERNEL_VERSION -> ${1#kernel-}"
-			echo -ne "\e[0m"
-		fi
-	fi
-
-	do_build $@
-
-	if [ "$DRY_RUN" ]; then
-		return 0
-	fi
-
-	if echo $1 | grep -q "^kernel"; then
-		ln -rsf "kernel/$RK_BOOT_IMG" "$RK_FIRMWARE_DIR/boot.img"
-		"$SCRIPTS_DIR/check-power-domain.sh"
-	fi
+	case "$1" in
+		recovery-kernel) build_recovery_kernel $@ ;;
+		kernel-*)
+			if [ "$RK_KERNEL_VERSION" != "${1#kernel-}" ]; then
+				notice "Kernel version overrided: " \
+					"$RK_KERNEL_VERSION -> ${1#kernel-}"
+			fi
+			;&
+		*) do_build $@ ;;
+	esac
 
 	finish_build build_$1
 }
@@ -208,26 +263,26 @@ build_hook_dry()
 POST_BUILD_CMDS="linux-headers"
 post_build_hook()
 {
-	check_config RK_KERNEL_DTS_NAME RK_KERNEL_CFG RK_BOOT_IMG || return 0
-	source "$SCRIPTS_DIR/kernel-helper"
+	check_config RK_KERNEL RK_KERNEL_CFG || false
+	source "$RK_SCRIPTS_DIR/kernel-helper"
 
 	[ "$1" = "linux-headers" ] || return 0
 	shift
 
 	[ "$1" != cmds ] || shift
-	OUTPUT_FILE="${2:-"$RK_OUTDIR"}/linux-headers.tar"
+	OUTPUT_FILE="${1:-"$RK_OUTDIR"}/linux-headers.tar"
 	mkdir -p "$(dirname "OUTPUT_DIR")"
 
 	HEADER_FILES_SCRIPT=$(mktemp)
 
 	if [ "$DRY_RUN" ]; then
-		echo -e "\e[35mCommands of building linux-headers:\e[0m"
+		notice "Commands of building linux-headers:"
 	else
-		echo "Saving linux-headers to $OUTPUT_FILE"
+		notice "Saving linux-headers to $OUTPUT_FILE"
 	fi
 
 	run_command $KMAKE $RK_KERNEL_CFG $RK_KERNEL_CFG_FRAGMENTS
-	run_command $KMAKE modules_prepare
+	run_command $KMAKE $RK_KERNEL_IMG_NAME
 
 	cat << EOF > "$HEADER_FILES_SCRIPT"
 {
@@ -242,7 +297,7 @@ post_build_hook()
 	-cf "$OUTPUT_FILE"
 EOF
 
-	run_command cd "$SDK_DIR/kernel"
+	run_command cd "$RK_SDK_DIR/kernel"
 
 	cat "$HEADER_FILES_SCRIPT"
 
@@ -259,7 +314,7 @@ EOF
 			;;
 	esac
 
-	run_command cd "$SDK_DIR"
+	run_command cd "$RK_SDK_DIR"
 
 	rm -f "$HEADER_FILES_SCRIPT"
 }
@@ -269,11 +324,11 @@ post_build_hook_dry()
 	DRY_RUN=1 post_build_hook $@
 }
 
-source "${BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
+source "${RK_BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
 
 case "${1:-kernel}" in
-	kernel-config | kernel-make | kmake) pre_build_hook $@ ;;
-	kernel* | modules)
+	kernel-config | kconfig | kernel-make | kmake) pre_build_hook $@ ;;
+	kernel* | recovery-kernel | modules)
 		init_hook $@
 		build_hook ${@:-kernel}
 		;;

@@ -1,17 +1,15 @@
 #
 
-comment "RTOS doesn't use update image"
-	depends on RK_RTOS
-
-if !RK_RTOS
-
-menu "Update (Update image, OTA and A/B)"
+menu "Update (Rockchip update image)"
 
 config RK_UPDATE
-	bool "pack Rockchip update image"
-	default y
+	bool "update image"
+	default y if RK_KERNEL
 
 if RK_UPDATE
+
+config RK_AB_UPDATE
+	bool "A/B update"
 
 choice
 	prompt "package-file"
@@ -24,7 +22,7 @@ config RK_PACKAGE_FILE_DEFAULT
 config RK_PACKAGE_FILE_CUSTOM
 	bool "custom"
 	help
-	  Use custom package-file under <CHIP_DIR>/.
+	  Use custom package-file under <RK_CHIP_DIR>/.
 
 endchoice # package-file
 
@@ -34,41 +32,34 @@ config RK_PACKAGE_FILE
 	string "custom package-file"
 	default "package-file"
 	help
-	  Name of custom package-file under <CHIP_DIR>/.
+	  Name of custom package-file under <RK_CHIP_DIR>/.
 
 endif
 
-config RK_AB_UPDATE
-	bool "A/B update"
-
-if RK_AB_UPDATE
-
 choice
-	prompt "package-file for A/B OTA"
+	prompt "package-file for OTA"
 
-config RK_AB_OTA_PACKAGE_FILE_DEFAULT
+config RK_OTA_PACKAGE_FILE_DEFAULT
 	bool "auto"
 	help
 	  Auto-generated.
 
-config RK_AB_OTA_PACKAGE_FILE_CUSTOM
+config RK_OTA_PACKAGE_FILE_CUSTOM
 	bool "custom"
 	help
-	  Use custom A/B OTA package-file under <CHIP_DIR>/.
+	  Use custom package-file for OTA under <RK_CHIP_DIR>/.
 
-endchoice # A/B OTA package-file
+endchoice # OTA package-file
 
-if RK_AB_OTA_PACKAGE_FILE_CUSTOM
+if RK_OTA_PACKAGE_FILE_CUSTOM
 
-config RK_AB_OTA_PACKAGE_FILE
-	string "custom package-file for A/B OTA"
+config RK_OTA_PACKAGE_FILE
+	string "custom package-file for OTA"
+	default "ota-package-file"
 	help
-	  Name of custom package-file for A/B OTA under <CHIP_DIR>/.
+	  Name of custom package-file for OTA under <RK_CHIP_DIR>/.
 
-endif
 endif
 endif
 
 endmenu # Update
-
-endif

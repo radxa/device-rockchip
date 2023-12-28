@@ -2,46 +2,37 @@
 
 POST_ROOTFS_ONLY=1
 
-source "${POST_HELPER:-$(dirname "$(realpath "$0")")/../post-hooks/post-helper}"
+source "${RK_POST_HELPER:-$(dirname "$(realpath "$0")")/../post-hooks/post-helper}"
 
 build_wifibt()
 {
-	check_config RK_KERNEL_CFG RK_WIFIBT_CHIP || return 0
-	source "$SCRIPTS_DIR/kernel-helper"
+	check_config RK_KERNEL RK_WIFIBT_CHIP || return 0
+	source "$RK_SCRIPTS_DIR/kernel-helper"
 
-	echo "=========================================="
-	echo "          Start building wifi/BT ($RK_WIFIBT_CHIP)"
-	echo "=========================================="
+	message "=========================================="
+	message "          Start building wifi/BT ($RK_WIFIBT_CHIP)"
+	message "=========================================="
 
-	RKWIFIBT_DIR="$SDK_DIR/external/rkwifibt"
+	RKWIFIBT_DIR="$RK_SDK_DIR/external/rkwifibt"
 
-	OWNER=$(stat --format %U "$RKWIFIBT_DIR")
-	if [ "$OWNER" != "root" ]; then
-		if [ "${USER:-$(id -un)}" = "root" ]; then
-			# Fixing up rkwifibt permissions
-			find "$RKWIFIBT_DIR" -user root \
-				-exec chown -h -R $OWNER:$OWNER {} \;
-		else
-			# Check for dirty files owned by root
-			echo -e "\e[36m"
-			if find "$RKWIFIBT_DIR" -user 0 | grep ""; then
-				echo -e "\e[31m"
-				echo "$RKWIFIBT_DIR is dirty for non-root building!"
-				echo "Please clear it:"
-				echo "cd $RKWIFIBT_DIR"
-				echo "git add -f ."
-				echo "sudo git reset --hard"
-				echo -e "\e[0m"
-				exit 1
-			fi
-			echo -e "\e[0m"
+	if [ "$RK_SUDO_ROOT" ]; then
+		# Check for dirty files owned by root
+		echo -e "\e[36m"
+		if find "$RKWIFIBT_DIR" -user 0 | grep ""; then
+			error "$RKWIFIBT_DIR is dirty for non-root building!"
+			error "Please clear it:"
+			error "cd $RKWIFIBT_DIR"
+			error "git add -f ."
+			error "sudo git reset --hard"
+			exit 1
 		fi
+		echo -e "\e[0m"
 	fi
 
 	# Make sure that the kernel is ready
 	if [ ! -r kernel/include/generated/asm-offsets.h ]; then
-		echo "Kernel is not ready, building it for wifi/BT..."
-		"$SCRIPTS_DIR/mk-kernel.sh"
+		notice "Kernel is not ready, building it for wifi/BT..."
+		"$RK_SCRIPTS_DIR/mk-kernel.sh"
 	fi
 
 	# Check kernel config
@@ -72,25 +63,28 @@ build_wifibt()
 			$KMAKE M=$RKWIFIBT_DIR/drivers/bcmdhd CONFIG_BCMDHD=m \
 				CONFIG_BCMDHD_PCIE=y CONFIG_BCMDHD_SDIO=
 		fi
-		if [ -n "$WIFI_USB" ]; then
-			echo "building rtl8188fu usb"
-			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8188fu modules
-		fi
-		echo "building rtl8189fs sdio"
-		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8189fs modules
-		echo "building rtl8723ds sdio"
-		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8723ds modules
-		echo "building rtl8821cs sdio"
-		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8821cs modules
-		echo "building rtl8822cs sdio"
-		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8822cs modules
-		echo "building rtl8852bs sdio"
-		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8852bs modules \
+
+		if ! [[ "$RK_KERNEL_VERSION" = "6.1" ]];then
+			if [ -n "$WIFI_USB" ]; then
+				echo "building rtl8188fu usb"
+				$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8188fu modules
+			fi
+			echo "building rtl8189fs sdio"
+			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8189fs modules
+			echo "building rtl8723ds sdio"
+			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8723ds modules
+			echo "building rtl8821cs sdio"
+			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8821cs modules
+			echo "building rtl8822cs sdio"
+			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8822cs modules
+			echo "building rtl8852bs sdio"
+			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8852bs modules \
 			DRV_PATH=$RKWIFIBT_DIR/drivers/rtl8852bs
-		if [ -n "$WIFI_PCIE" ]; then
-			echo "building rtl8852be pcie"
-			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8852be modules \
-				DRV_PATH=$RKWIFIBT_DIR/drivers/rtl8852be
+			if [ -n "$WIFI_PCIE" ]; then
+				echo "building rtl8852be pcie"
+				$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8852be modules \
+					DRV_PATH=$RKWIFIBT_DIR/drivers/rtl8852be
+			fi
 		fi
 	fi
 
@@ -130,25 +124,27 @@ build_wifibt()
 			$RKWIFIBT_DIR/drivers/infineon/Makefile
 		$KMAKE M=$RKWIFIBT_DIR/drivers/infineon
 
-		if [ -n "$WIFI_USB" ]; then
-			echo "building rtl8188fu usb"
-			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8188fu modules
-		fi
-		echo "building rtl8189fs sdio"
-		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8189fs modules
-		echo "building rtl8723ds sdio"
-		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8723ds modules
-		echo "building rtl8821cs sdio"
-		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8821cs modules
-		echo "building rtl8822cs sdio"
-		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8822cs modules
-		echo "building rtl8852bs sdio"
-		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8852bs modules \
-			DRV_PATH=$RKWIFIBT_DIR/drivers/rtl8852bs
-		if [ -n "$WIFI_PCIE" ]; then
-			echo "building rtl8852be pcie"
-			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8852be modules \
-				DRV_PATH=$RKWIFIBT_DIR/drivers/rtl8852be
+		if ! [[ "$RK_KERNEL_VERSION" = "6.1" ]];then
+			if [ -n "$WIFI_USB" ]; then
+				echo "building rtl8188fu usb"
+				$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8188fu modules
+			fi
+			echo "building rtl8189fs sdio"
+			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8189fs modules
+			echo "building rtl8723ds sdio"
+			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8723ds modules
+			echo "building rtl8821cs sdio"
+			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8821cs modules
+			echo "building rtl8822cs sdio"
+			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8822cs modules
+			echo "building rtl8852bs sdio"
+			$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8852bs modules \
+				DRV_PATH=$RKWIFIBT_DIR/drivers/rtl8852bs
+			if [ -n "$WIFI_PCIE" ]; then
+				echo "building rtl8852be pcie"
+				$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8852be modules \
+					DRV_PATH=$RKWIFIBT_DIR/drivers/rtl8852be
+			fi
 		fi
 	fi
 
@@ -250,10 +246,12 @@ build_wifibt()
 		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8852be modules
 	fi
 
-	echo "building realtek bt drivers"
-	$KMAKE M=$RKWIFIBT_DIR/drivers/bluetooth_uart_driver
-	if [ -n "$WIFI_USB" ]; then
-		$KMAKE M=$RKWIFIBT_DIR/drivers/bluetooth_usb_driver
+	if ! [[ "$RK_KERNEL_VERSION" = "6.1" ]];then
+		echo "building realtek bt drivers"
+		$KMAKE M=$RKWIFIBT_DIR/drivers/bluetooth_uart_driver
+		if [ -n "$WIFI_USB" ]; then
+			$KMAKE M=$RKWIFIBT_DIR/drivers/bluetooth_usb_driver
+		fi
 	fi
 
 	mkdir -p $TARGET_DIR/etc/ $TARGET_DIR/usr/bin/ \
@@ -273,7 +271,8 @@ build_wifibt()
 	install -m 0655 $RKWIFIBT_DIR/conf/* "$TARGET_DIR/etc/"
 	install -m 0755 $RKWIFIBT_DIR/bin/arm/* "$TARGET_DIR/usr/bin/"
 	install -m 0755 $RKWIFIBT_DIR/scripts/* "$TARGET_DIR/usr/bin/"
-	for b in bt-tty wifibt-info wifibt-vendor wifibt-chip wifibt-module; do
+	for b in bt-tty wifibt-info wifibt-vendor wifibt-id wifibt-bus \
+		wifibt-chip wifibt-module; do
 		ln -sf wifibt-util.sh "$TARGET_DIR/usr/bin/$b"
 	done
 
@@ -285,14 +284,16 @@ build_wifibt()
 			$TARGET_DIR/lib/firmware/ || true
 
 		#reatek
-		cp $RKWIFIBT_DIR/firmware/realtek/*/* $TARGET_DIR/lib/firmware/
-		cp $RKWIFIBT_DIR/firmware/realtek/*/* \
-			$TARGET_DIR/lib/firmware/rtlbt/
-		cp $RKWIFIBT_DIR/drivers/bluetooth_uart_driver/hci_uart.ko \
-			$TARGET_DIR/lib/modules/
-		if [ -n "$WIFI_USB" ]; then
-			cp $RKWIFIBT_DIR/drivers/bluetooth_usb_driver/rtk_btusb.ko \
+		if ! [[ "$RK_KERNEL_VERSION" = "6.1" ]];then
+			cp $RKWIFIBT_DIR/firmware/realtek/*/* $TARGET_DIR/lib/firmware/
+			cp $RKWIFIBT_DIR/firmware/realtek/*/* \
+				$TARGET_DIR/lib/firmware/rtlbt/
+			cp $RKWIFIBT_DIR/drivers/bluetooth_uart_driver/hci_uart.ko \
 				$TARGET_DIR/lib/modules/
+			if [ -n "$WIFI_USB" ]; then
+				cp $RKWIFIBT_DIR/drivers/bluetooth_usb_driver/rtk_btusb.ko \
+					$TARGET_DIR/lib/modules/
+			fi
 		fi
 	fi
 
@@ -305,16 +306,18 @@ build_wifibt()
 			$TARGET_DIR/lib/firmware/ || true
 
 		#reatek
-		echo "copy realtek firmware/nvram to rootfs"
-		cp $RKWIFIBT_DIR/drivers/rtl*/*.ko $TARGET_DIR/lib/modules/
-		cp -rf $RKWIFIBT_DIR/firmware/realtek/*/* $TARGET_DIR/lib/firmware/
-		cp -rf $RKWIFIBT_DIR/firmware/realtek/*/* \
-			$TARGET_DIR/lib/firmware/rtlbt/
-		cp $RKWIFIBT_DIR/drivers/bluetooth_uart_driver/hci_uart.ko \
-			$TARGET_DIR/lib/modules/
-		if [ -n "$WIFI_USB" ]; then
-			cp $RKWIFIBT_DIR/drivers/bluetooth_usb_driver/rtk_btusb.ko \
+		if ! [[ "$RK_KERNEL_VERSION" = "6.1" ]];then
+			echo "copy realtek firmware/nvram to rootfs"
+			cp $RKWIFIBT_DIR/drivers/rtl*/*.ko $TARGET_DIR/lib/modules/
+			cp -rf $RKWIFIBT_DIR/firmware/realtek/*/* $TARGET_DIR/lib/firmware/
+			cp -rf $RKWIFIBT_DIR/firmware/realtek/*/* \
+				$TARGET_DIR/lib/firmware/rtlbt/
+			cp $RKWIFIBT_DIR/drivers/bluetooth_uart_driver/hci_uart.ko \
 				$TARGET_DIR/lib/modules/
+			if [ -n "$WIFI_USB" ]; then
+				cp $RKWIFIBT_DIR/drivers/bluetooth_usb_driver/rtk_btusb.ko \
+					$TARGET_DIR/lib/modules/
+			fi
 		fi
 	fi
 
@@ -364,6 +367,6 @@ build_wifibt()
 	chmod 755 "$TARGET_DIR/etc/generate_logs.d/80-wifibt.sh"
 }
 
-echo "Building Wifi/BT module and firmwares..."
-cd "$SDK_DIR"
+message "Building Wifi/BT module and firmwares..."
+cd "$RK_SDK_DIR"
 build_wifibt

@@ -1,32 +1,28 @@
 #!/bin/bash -e
 
-source "${POST_HELPER:-$(dirname "$(realpath "$0")")/../post-hooks/post-helper}"
+source "${RK_POST_HELPER:-$(dirname "$(realpath "$0")")/../post-hooks/post-helper}"
 
-# buildroot would fixup owner in its fakeroot script
-if grep -q "^ID=buildroot$" "$TARGET_DIR/etc/os-release"; then
-	exit 0
+if [ "$RK_SUDO_ROOT" ]; then
+	message "Fixing up owner for $RK_OUTDIR..."
+	find "$RK_OUTDIR" -user root -exec \
+		chown -ch $RK_OWNER_UID:$RK_OWNER_UID {} \;
 fi
 
-echo "Fixing up owner for $TARGET_DIR..."
+# buildroot would fixup owner in its fakeroot script
+[ "$POST_OS" != buildroot ] || exit 0
 
-ID=$(stat --format %u "$SDK_DIR")
-if [ "$ID" -ne 0 ]; then
-	NAME=$(grep -E "^[^:]*:x:$ID:" /etc/passwd | cut -d':' -f1)
-	echo "Fixing up uid=$ID($NAME) to 0(root)..."
-	find . -user $ID -exec chown -h 0:0 {} \;
+message "Fixing up owner for $TARGET_DIR..."
+
+if [ "$RK_OWNER_UID" -ne 0 ]; then
+	message "Fixing up uid=$RK_OWNER($RK_OWNER_UID) to 0(root)..."
+	find . -user $RK_OWNER_UID -exec chown -ch 0:0 {} \;
 fi
 
 if [ -d home ]; then
 	for u in $(ls home/); do
 		ID=$(grep "^$u:" etc/passwd | cut -d':' -f3 || true)
 		[ "$ID" ] || continue
-		echo "Fixing up /home/$u for uid=$ID($u)..."
-		chown -h -R $ID:$ID home/$u
+		message "Fixing up /home/$u for uid=$ID($u)..."
+		chown -ch -R $ID:$ID home/$u
 	done
-fi
-
-ID=$(stat --format %u "$RK_OUTDIR")
-if [ "$(id -u)" -eq 0 -a "$ID" -ne 0 ]; then
-	echo "Fixing up owner for $RK_OUTDIR..."
-	find "$RK_OUTDIR" -user 0 -exec chown -h $ID:$ID {} \;
 fi

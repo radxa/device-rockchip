@@ -2,6 +2,12 @@
 
 menu "Post rootfs installs"
 
+config RK_ROOTFS_STRIP_MODULES
+	bool "strip kernel modules"
+	default y
+	help
+	  Strip any '.ko' kernel modules.
+
 choice
 	prompt "hostname"
 
@@ -50,6 +56,14 @@ config RK_ROOTFS_LOCALE
 
 endif
 
+config RK_ROOTFS_ASYNC_COMMIT
+	bool "async-commit DRM driver hack"
+	default y
+
+config RK_ROOTFS_DEBUG_INFO
+	bool "debug information dir (/info/)"
+	default y
+
 choice
 	prompt "disk helpers"
 
@@ -84,151 +98,7 @@ config RK_ROOTFS_UDEV_RULES
 	bool "Rockchip udev rules"
 	default y
 
-comment "USB gadget depends on linux kernel"
-	depends on RK_KERNEL_CFG = ""
-
-if RK_KERNEL_CFG != ""
-
-choice
-	prompt "USB gadget"
-
-config RK_USB_DEFAULT
-	bool "auto"
-	help
-	  Install USB gadget on non-buildroot OS.
-
-config RK_USB_ENABLED
-	bool "install"
-
-config RK_USB_DISABLED
-	bool "not install"
-
-endchoice # USB gadget
-
-if !RK_USB_DISABLED
-
-menu "USB gadget"
-
-config RK_USB_ADBD
-	bool "adbd"
-	default y
-	help
-	  Android adbd.
-
-if RK_USB_ADBD
-
-config RK_USB_ADBD_TCP_PORT
-	int "adbd tcp port"
-	default 5555
-
-config RK_USB_ADBD_BASH
-	bool "adbd prefer using bash"
-	default y
-
-config RK_USB_ADBD_PASSWORD
-	string "adbd password"
-	default ""
-
-config RK_USB_ADBD_RSA_KEY
-	string "adbd RSA key"
-	default ""
-
-endif
-
-config RK_USB_MTP
-	bool "mtp"
-	help
-	  Media Transfer Protocal (MTP).
-
-config RK_USB_ACM
-	bool "acm"
-
-config RK_USB_NTB
-	bool "ntb"
-	help
-	  Rockchip NTB.
-
-config RK_USB_UVC
-	bool "uvc"
-
-config RK_USB_UAC1
-	bool "uac1"
-
-config RK_USB_UAC2
-	bool "uac2"
-
-config RK_USB_HID
-	bool "hid"
-
-config RK_USB_RNDIS
-	bool "rndis"
-
-config RK_USB_UMS
-	bool "ums"
-	help
-	  USB mass storage (UMS).
-
-if RK_USB_UMS
-
-config RK_USB_UMS_FILE
-	string "ums file"
-	default "/userdata/ums_shared.img"
-	help
-	  Block device or image file to share through UMS.
-
-config RK_USB_UMS_SIZE
-	string "ums size"
-	default "256M"
-	help
-	  UMS's size.
-
-config RK_USB_UMS_FSTYPE
-	string "ums fstype"
-	default "vfat"
-	help
-	  UMS's filesystem type.
-
-config RK_USB_UMS_MOUNT
-	bool "ums mount"
-	default n
-	help
-	  Mount when USB disconnected, umount when connected.
-
-	  Warning:
-	  Umounting UMS may failed if it is still in use.
-
-config RK_USB_UMS_MOUNTPOINT
-	string "ums mountpoint"
-	default "/mnt/ums"
-	help
-	  UMS's mountpoint.
-
-config RK_USB_UMS_RO
-	bool "ums ro"
-	default n
-	help
-	  UMS is read-only.
-
-endif
-
-config RK_USB_EXTRA
-	string "extra USB gadget configs"
-	default ""
-
-config RK_USB_HOOKS
-	string "hook scripts"
-	default ""
-
-endmenu # USB gadget
-
-endif
-
-endif
-
-comment "wifi/BT depends on linux kernel"
-	depends on RK_KERNEL_CFG = ""
-
-if RK_KERNEL_CFG != ""
+source "Config.in.post-usb"
 
 config RK_WIFIBT_CHIP
 	string "wifi/BT chip"
@@ -237,13 +107,11 @@ config RK_WIFIBT_CHIP
 	  ALL_AP for Realtek and AP6XXX, ALL_CY for Realtek and CYWXXX.
 	  Set "" for no WIFI/BT.
 
-endif
-
-config RK_ROOTFS_OVERLAY_DIRS
-	bool "rootfs overlay dirs"
+config RK_ROOTFS_OVERLAY
+	bool "rootfs overlay"
 	default y
 
-if RK_ROOTFS_OVERLAY_DIRS
+if RK_ROOTFS_OVERLAY
 
 choice
 	prompt "extra fonts"
@@ -277,12 +145,22 @@ config RK_ROOTFS_INPUT_EVENT_DAEMON_DISABLED
 
 endchoice # input-event-daemon
 
+config RK_ROOTFS_BOOTANIM
+	bool "bootanim (Boot-time animation)"
+
+if RK_ROOTFS_BOOTANIM
+
+config RK_ROOTFS_BOOTANIM_TIMEOUT
+	int "timeout"
+	default 3
+
+endif
+
 config RK_ROOTFS_IRQBALANCE
 	bool "irqbalance"
 	default y
 
-config RK_ROOTFS_FRECON
-	bool "frecon virtual terminal (VT)"
+source "Config.in.post-frecon"
 
 config RK_ROOTFS_PREBUILT_TOOLS
 	bool "prebuilt tools"

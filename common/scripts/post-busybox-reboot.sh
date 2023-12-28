@@ -1,12 +1,12 @@
 #!/bin/bash -e
 
-source "${POST_HELPER:-$(dirname "$(realpath "$0")")/../post-hooks/post-helper}"
+source "${RK_POST_HELPER:-$(dirname "$(realpath "$0")")/../post-hooks/post-helper}"
 
 REBOOT_WRAPPER=busybox-reboot
 
 [ "$(readlink sbin/reboot)" = busybox ] || exit 0
 
-echo "Fixing up busybox reboot commands..."
+message "Fixing up busybox reboot commands..."
 
 install -D -m 0755 "$RK_DATA_DIR/$REBOOT_WRAPPER" sbin/$REBOOT_WRAPPER
 

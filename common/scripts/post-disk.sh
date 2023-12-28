@@ -2,13 +2,21 @@
 
 POST_ROOTFS_ONLY=1
 
-source "${POST_HELPER:-$(dirname "$(realpath "$0")")/../post-hooks/post-helper}"
+source "${RK_POST_HELPER:-$(dirname "$(realpath "$0")")/../post-hooks/post-helper}"
 
-[ -z "$RK_DISK_HELPERS_DISABLED" ] || exit 0
+if [ "$RK_DISK_HELPERS_DISABLED" ]; then
+	notice "Disabling disk-helpers..."
+	find "$TARGET_DIR/etc" "$TARGET_DIR/lib" "$TARGET_DIR/usr/" \
+		-name "*mountall*" -print0 -o -name "*mount-all*" -print0 -o \
+		-name "*resizeall*" -print0 -o -name "*resize-all*" -print0 \
+		2>/dev/null | xargs -0 rm -rf
+	exit 0
+fi
 
-cd "$SDK_DIR"
+cd "$RK_SDK_DIR"
 
 mkdir -p "$TARGET_DIR/usr/bin"
+
 install -m 0755 external/rkscript/disk-helper "$TARGET_DIR/usr/bin/"
 
 if [ "$RK_DISK_HELPERS_MOUNTALL" ]; then
@@ -23,7 +31,7 @@ else
 	fi
 fi
 
-echo "Installing $DISK_HELPER_TYPE service..."
+message "Installing $DISK_HELPER_TYPE service..."
 
 install -m 0755 external/rkscript/$DISK_HELPER_TYPE-helper \
 	"$TARGET_DIR/usr/bin/"
@@ -34,12 +42,12 @@ install_busybox_service external/rkscript/$SCRIPT
 
 if [ "$DISK_HELPER_TYPE" = mount ]; then
 	if [ "$RK_DISK_AUTO_FORMAT" ]; then
-		echo "Enabling auto formatting..."
+		message "Enabling auto formatting..."
 		touch "$TARGET_DIR/.auto_mkfs"
 	fi
 
 	if [ "$RK_DISK_SKIP_FSCK" ]; then
-		echo "Disabling boot time fsck..."
+		message "Disabling boot time fsck..."
 		touch "$TARGET_DIR/.skip_fsck"
 	fi
 	exit 0
