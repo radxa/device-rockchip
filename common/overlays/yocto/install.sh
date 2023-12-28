@@ -17,17 +17,27 @@ if [ -r "$TARGET_DIR/etc/profile" ]; then
 		"$TARGET_DIR/etc/profile"
 fi
 
+# Apply global NTP server
+if [ -r "$TARGET_DIR/etc/ntp.conf" ] && \
+	! grep -q "^server .*ntp" "$TARGET_DIR/etc/ntp.conf"; then
+	echo >> "$TARGET_DIR/etc/ntp.conf"
+	echo "server 0.pool.ntp.org iburst" >> "$TARGET_DIR/etc/ntp.conf"
+	echo "server 1.pool.ntp.org iburst" >> "$TARGET_DIR/etc/ntp.conf"
+	echo "server 2.pool.ntp.org iburst" >> "$TARGET_DIR/etc/ntp.conf"
+	echo "server 3.pool.ntp.org iburst" >> "$TARGET_DIR/etc/ntp.conf"
+fi
+
 # Install weston overlays
 if [ -x "$TARGET_DIR/usr/bin/weston" ]; then
 	sed -i 's/\(WESTON_USER=\)weston/\1root/' \
 		"$TARGET_DIR/etc/init.d/weston"
 
-	echo "Installing weston overlay: $OVERLAY_DIR/weston to $TARGET_DIR..."
+	message "Installing weston overlay: $OVERLAY_DIR/weston to $TARGET_DIR..."
 	$RK_RSYNC "$OVERLAY_DIR/weston/" "$TARGET_DIR/" \
 		--exclude="$(basename "$(realpath "$0")")"
 
-	echo "Installing Rockchip test scripts to $TARGET_DIR..."
-	$RK_RSYNC "$SDK_DIR/external/rockchip-test/" \
+	message "Installing Rockchip test scripts to $TARGET_DIR..."
+	$RK_RSYNC "$RK_SDK_DIR/external/rockchip-test/" \
 		"$TARGET_DIR/rockchip-test/" \
 		--include="camera/" --include="video/" --exclude="/*"
 fi
@@ -48,4 +58,13 @@ if [ "$RK_YOCTO_USBMOUNT" ]; then
 		rm -rf "$TARGET_DIR/media/${type}0"
 		ln -sf "/mnt/$type" "$TARGET_DIR/media/${type}0"
 	done
+fi
+
+# Install pulseaudio
+if [ -x "$TARGET_DIR/usr/bin/pulseaudio" ]; then
+	$RK_RSYNC "$OVERLAY_DIR/pulseaudio/etc/pulse" "$TARGET_DIR/etc/"
+
+	mkdir -p "$TARGET_DIR/etc/rcS.d"
+	install -m 0755 "$OVERLAY_DIR/pulseaudio/etc/rcS.d/S50pulseaudio" \
+		"$TARGET_DIR/etc/rcS.d/"
 fi

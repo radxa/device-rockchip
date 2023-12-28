@@ -1,32 +1,30 @@
 #!/bin/bash -e
 
-MAKE="make ${DEBUG:+V=1} -C $(realpath --relative-to="$SDK_DIR" "$COMMON_DIR")"
-
 switch_defconfig()
 {
 	DEFCONFIG="$1"
 
-	[ -f "$DEFCONFIG" ] || DEFCONFIG="$CHIP_DIR/$DEFCONFIG"
+	[ -f "$DEFCONFIG" ] || DEFCONFIG="$RK_CHIP_DIR/$DEFCONFIG"
 
 	if [ ! -f "$DEFCONFIG" ]; then
-		echo "No such defconfig: $1"
+		error "No such defconfig: $1"
 		exit 1
 	fi
 
-	echo "Switching to defconfig: $DEFCONFIG"
+	notice "Switching to defconfig: $DEFCONFIG"
 	rm -f "$RK_DEFCONFIG_LINK"
 	ln -rsf "$DEFCONFIG" "$RK_DEFCONFIG_LINK"
 
 	DEFCONFIG="$(realpath "$DEFCONFIG")"
-	rm -rf "$CHIP_DIR"
-	ln -rsf "$(dirname "$DEFCONFIG")" "$CHIP_DIR"
+	rm -rf "$RK_CHIP_DIR"
+	ln -rsf "$(dirname "$DEFCONFIG")" "$RK_CHIP_DIR"
 
-	$MAKE $(basename "$DEFCONFIG")
+	make $(basename "$DEFCONFIG")
 }
 
 rockchip_defconfigs()
 {
-	cd "$CHIP_DIR"
+	cd "$RK_CHIP_DIR"
 	ls rockchip_defconfig 2>/dev/null || true
 	ls *_defconfig | grep -v rockchip_defconfig || true
 }
@@ -39,7 +37,7 @@ choose_defconfig()
 
 	case $DEFCONFIG_ARRAY_LEN in
 		0)
-			echo "No available defconfigs${1:+" for: $1"}"
+			error "No available defconfigs${1:+" for: $1"}"
 			return 1
 			;;
 		1)	DEFCONFIG=${DEFCONFIG_ARRAY[0]} ;;
@@ -48,8 +46,7 @@ choose_defconfig()
 				# Prefer exact-match
 				DEFCONFIG="$1"
 			else
-				echo "Pick a defconfig:"
-				echo ""
+				message "Pick a defconfig:\n"
 
 				echo ${DEFCONFIG_ARRAY[@]} | xargs -n 1 | \
 					sed "=" | sed "N;s/\n/. /"
@@ -67,12 +64,12 @@ choose_defconfig()
 
 choose_chip()
 {
-	CHIP_ARRAY=( $(ls "$CHIPS_DIR" | grep "$1" || true) )
+	CHIP_ARRAY=( $(ls "$RK_CHIPS_DIR" | grep "$1" || true) )
 	CHIP_ARRAY_LEN=${#CHIP_ARRAY[@]}
 
 	case $CHIP_ARRAY_LEN in
 		0)
-			echo "No available chips${1:+" for: $1"}"
+			error "No available chips${1:+" for: $1"}"
 			return 1
 			;;
 		1)	CHIP=${CHIP_ARRAY[0]} ;;
@@ -81,8 +78,7 @@ choose_chip()
 				# Prefer exact-match
 				CHIP="$1"
 			else
-				echo "Pick a chip:"
-				echo ""
+				message "Pick a chip:\n"
 
 				echo ${CHIP_ARRAY[@]} | xargs -n 1 | sed "=" | \
 					sed "N;s/\n/. /"
@@ -95,57 +91,57 @@ choose_chip()
 			;;
 	esac
 
-	echo "Switching to chip: $CHIP"
-	rm -rf "$CHIP_DIR"
-	ln -rsf "$CHIPS_DIR/$CHIP" "$CHIP_DIR"
+	notice "Switching to chip: $CHIP"
+	rm -rf "$RK_CHIP_DIR"
+	ln -rsf "$RK_CHIPS_DIR/$CHIP" "$RK_CHIP_DIR"
 
 	choose_defconfig $2
 }
 
 prepare_config()
 {
-	[ -e "$CHIP_DIR" ] || choose_chip
+	[ -e "$RK_CHIP_DIR" ] || choose_chip
 
-	cd "$DEVICE_DIR"
-	rm -f $(ls "$CHIPS_DIR")
-	ln -rsf "$(readlink "$CHIP_DIR")" .
-	cd "$SDK_DIR"
+	cd "$RK_DEVICE_DIR"
+	rm -f $(ls "$RK_CHIPS_DIR")
+	ln -rsf "$(readlink "$RK_CHIP_DIR")" .
+	cd "$RK_SDK_DIR"
 
 	if [ ! -r "$RK_DEFCONFIG_LINK" ]; then
-		echo "WARN: $RK_DEFCONFIG_LINK not exists"
+		warning "WARN: $RK_DEFCONFIG_LINK not exists"
 		choose_defconfig
 		return 0
 	fi
 
 	DEFCONFIG=$(basename "$(realpath "$RK_DEFCONFIG_LINK")")
-	if [ ! "$RK_DEFCONFIG_LINK" -ef "$CHIP_DIR/$DEFCONFIG" ]; then
-		echo "WARN: $RK_DEFCONFIG_LINK is invalid"
+	if [ ! "$RK_DEFCONFIG_LINK" -ef "$RK_CHIP_DIR/$DEFCONFIG" ]; then
+		warning "WARN: $RK_DEFCONFIG_LINK is invalid"
 		choose_defconfig
 		return 0
 	fi
 
 	if [ "$RK_CONFIG" -ot "$RK_DEFCONFIG_LINK" ]; then
-		echo "WARN: $RK_CONFIG is out-dated"
-		$MAKE $DEFCONFIG &>/dev/null
+		warning "WARN: $RK_CONFIG is out-dated"
+		make $DEFCONFIG
 		return 0
 	fi
 
 	CONFIG_DIR="$(dirname "$RK_CONFIG_IN")"
 	if find "$CONFIG_DIR" -cnewer "$RK_CONFIG" | grep -q ""; then
-		echo "WARN: $CONFIG_DIR is updated"
-		$MAKE $DEFCONFIG &>/dev/null
+		warning "WARN: $CONFIG_DIR is updated"
+		make $DEFCONFIG
 		return 0
 	fi
 
 	CFG="RK_DEFCONFIG=\"$(realpath "$RK_DEFCONFIG_LINK")\""
 	if ! grep -wq "$CFG" "$RK_CONFIG"; then
-		echo "WARN: $RK_CONFIG is invalid"
-		$MAKE $DEFCONFIG &>/dev/null
+		warning "WARN: $RK_CONFIG is invalid"
+		make $DEFCONFIG
 		return 0
 	fi
 
 	if [ "$RK_CONFIG" -nt "${RK_CONFIG}.old" ]; then
-		$MAKE olddefconfig &>/dev/null
+		make olddefconfig >/dev/null
 		touch "${RK_CONFIG}.old"
 	fi
 }
@@ -158,7 +154,7 @@ usage_hook()
 	echo -e "defconfig[:<config>]              \tchoose defconfig"
 	echo -e " *_defconfig                      \tswitch to specified defconfig"
 	echo "    available defconfigs:"
-	ls "$CHIP_DIR/" | grep "defconfig$" | sed "s/^/\t/"
+	ls "$RK_CHIP_DIR/" | grep "defconfig$" | sed "s/^/\t/"
 	echo -e " olddefconfig                     \tresolve any unresolved symbols in .config"
 	echo -e " savedefconfig                    \tsave current config to defconfig"
 	echo -e " menuconfig                       \tinteractive curses-based configurator"
@@ -170,7 +166,7 @@ clean_hook()
 	rm -rf "$RK_OUTDIR"/*config* "$RK_OUTDIR/kconf"
 }
 
-INIT_CMDS="chip defconfig lunch .*_defconfig olddefconfig savedefconfig menuconfig config default"
+INIT_CMDS="chip defconfig lunch [^:]*_defconfig olddefconfig savedefconfig menuconfig config default"
 init_hook()
 {
 	case "${1:-default}" in
@@ -179,18 +175,18 @@ init_hook()
 		*_defconfig) switch_defconfig "$1" ;;
 		olddefconfig | savedefconfig | menuconfig)
 			prepare_config
-			$MAKE $1
+			make $1
 			;;
 		config)
 			prepare_config
-			$MAKE menuconfig
-			$MAKE savedefconfig
+			make menuconfig
+			make savedefconfig
 			;;
 		default) prepare_config ;; # End of init
 		*) usage ;;
 	esac
 }
 
-source "${BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
+source "${RK_BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
 
 init_hook $@

@@ -1,10 +1,11 @@
 #!/bin/bash -e
 
-source "${POST_HELPER:-$(dirname "$(realpath "$0")")/../post-hooks/post-helper}"
+source "${RK_POST_HELPER:-$(dirname "$(realpath "$0")")/../post-hooks/post-helper}"
 
-RK_RSYNC="rsync -av --chmod=u=rwX,go=rX --copy-unsafe-links --exclude .empty"
+RK_RSYNC="rsync -av --chmod=u=rwX,go=rX --copy-unsafe-links --exclude .empty --exclude .git"
+RK_OVERLAY_ALLOWED="$@"
 
-cd "$COMMON_DIR/overlays"
+cd "$RK_COMMON_DIR/overlays"
 
 install_overlay()
 {
@@ -19,21 +20,17 @@ install_overlay()
 
 	OVERLAY="$(realpath "$OVERLAY")"
 	if [ -x "$OVERLAY/install.sh" ]; then
-		echo -ne "\e[36m"
-		echo "Handling overlay: $OVERLAY)..."
-		echo -ne "\e[0m"
+		notice "Handling overlay: $OVERLAY)..."
 		RK_RSYNC="$RK_RSYNC" \
 			"$OVERLAY/install.sh" "$TARGET_DIR" "$POST_OS"
 	else
-		echo -ne "\e[36m"
-		echo "Installing overlay: $OVERLAY to $TARGET_DIR..."
-		echo -ne "\e[0m"
+		notice "Installing overlay: $OVERLAY to $TARGET_DIR..."
 		$RK_RSYNC "$OVERLAY/" "$TARGET_DIR/"
 	fi
 }
 
-# No overlays for rootfs without RK_ROOTFS_OVERLAY_DIRS
-[ "$POST_ROOTFS" -a "$RK_ROOTFS_OVERLAY_DIRS" ] || exit 0
+# No overlays for rootfs without RK_ROOTFS_OVERLAY
+[ "$POST_ROOTFS" -a "$RK_ROOTFS_OVERLAY" ] || exit 0
 
 install_overlay common
 

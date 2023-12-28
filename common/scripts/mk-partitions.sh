@@ -8,9 +8,9 @@ print_usage()
 
 modify_partitions()
 {
-	echo "=========================================="
-	echo "          Start modifying partitions"
-	echo "=========================================="
+	message "=========================================="
+	message "          Start modifying partitions"
+	message "=========================================="
 
 	rk_partition_print
 
@@ -23,7 +23,7 @@ modify_partitions()
 		read -p "Commands (? for help): " SUB_CMD ARGS || break
 		case "${SUB_CMD:-print-parts}" in
 			done | d) break ;;
-			print-parts | p)
+			print-parts | p | list-parts | l)
 				rk_partition_print
 				continue
 				;;
@@ -36,7 +36,7 @@ modify_partitions()
 			resize-part | rs) FUNC=rk_partition_resize ;;
 			help | h | -h | --help | \?) FUNC=false ;;
 			*)
-				echo "Unknown command: $SUB_CMD"
+				error "Unknown command: $SUB_CMD"
 				FUNC=false
 				;;
 		esac
@@ -54,6 +54,7 @@ modify_partitions()
 usage_hook()
 {
 	echo -e "print-parts                        \tprint partitions"
+	echo -e "list-parts                         \talias of print-parts"
 	echo -e "mod-parts                          \tinteractive partition table modify"
 	echo -e "edit-parts                         \tedit raw partitions"
 	echo -e "new-parts:<offset>:<name>:<size>...\tre-create partitions"
@@ -64,16 +65,16 @@ usage_hook()
 	echo -e "resize-part:(<idx>|<name>):<size>  \tresize partition"
 }
 
-PRE_BUILD_CMDS="print-parts mod-parts edit-parts new-parts insert-part del-part move-part rename-part resize-part"
+PRE_BUILD_CMDS="print-parts list-parts mod-parts edit-parts new-parts insert-part del-part move-part rename-part resize-part"
 pre_build_hook()
 {
-	check_config RK_PARAMETER || return 0
+	check_config RK_PARAMETER || false
 
 	CMD=$1
 	shift
 
 	case "$CMD" in
-		print-parts) rk_partition_print $@ ;;
+		print-parts | list-parts) rk_partition_print $@ ;;
 		mod-parts) modify_partitions $@ ;;
 		edit-parts) rk_partition_edit $@ ;;
 		new-parts) rk_partition_create $@ ;;
@@ -91,6 +92,6 @@ pre_build_hook()
 	finish_build $CMD $@
 }
 
-source "${BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
+source "${RK_BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
 
 pre_build_hook $@

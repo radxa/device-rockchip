@@ -2,15 +2,15 @@
 
 build_uefi()
 {
-	check_config RK_KERNEL_DTB || return 1
+	check_config RK_KERNEL_DTS_NAME || false
 
 	if [ "$RK_CHIP" != rk3588 -o ! -d uefi ]; then
-		echo "UEFI not supported!"
+		error "UEFI not supported!"
 		return 1
 	fi
 
 	if [ ! -f "$RK_KERNEL_DTB" ]; then
-		echo "$RK_KERNEL_DTB not exists!"
+		error "$RK_KERNEL_DTB not exists!"
 		return 1
 	fi
 
@@ -23,7 +23,7 @@ build_uefi()
 
 build_uboot()
 {
-	check_config RK_UBOOT_CFG || return 0
+	check_config RK_LOADER RK_UBOOT_CFG || false
 
 	if [ -z "$DRY_RUN" ]; then
 		rm -f u-boot/*.bin u-boot/*.img
@@ -32,20 +32,28 @@ build_uboot()
 	UARGS_COMMON="$RK_UBOOT_OPTS \
 		${RK_UBOOT_INI:+../rkbin/RKBOOT/$RK_UBOOT_INI} \
 		${RK_UBOOT_TRUST_INI:+../rkbin/RKTRUST/$RK_UBOOT_TRUST_INI}"
-	UARGS="$UARGS_COMMON ${RK_UBOOT_SPL:+--spl-new} \
-		${RK_SECURITY_BURN_KEY:+--burn-key-hash}"
+	UARGS="$UARGS_COMMON ${RK_UBOOT_SPL:+--spl-new}"
 
-	if [ "$RK_SECURITY" ]; then
-		for IMAGE in ${1:-boot.img ${RK_RECOVERY_CFG:+recovery.img}}; do
-			[ "$DRY_RUN" ] || \
-				cp "$RK_FIRMWARE_DIR/$IMAGE" u-boot/
-
-			UARGS="$UARGS --${IMAGE/./_} $SDK_DIR/u-boot/$IMAGE"
-		done
-	fi
+	[ ! "$RK_SECURITY_BURN_KEY" ] || \
+		UARGS="$UARGS ${RK_SECUREBOOT_FIT:+--burn-key-hash}"
 
 	run_command cd u-boot
+
 	run_command $UMAKE $RK_UBOOT_CFG $RK_UBOOT_CFG_FRAGMENTS $UARGS
+	[ ! -z "$DRY_RUN" ] || "$RK_SCRIPTS_DIR/check-security.sh" uboot
+
+	if [ "$RK_SECURITY_OPTEE_STORAGE_SECURITY" ]; then
+		if [ -z "$(rk_partition_size security)" ]; then
+			error "\"security\" partition not found in parameter"
+			return 1
+		fi
+
+		if [ -z "$(rk_partition_size vbmeta)" ]; then
+			error "\"vbmeta\" partition not found in parameter"
+			return 1
+		fi
+
+	fi
 
 	if [ "$RK_UBOOT_SPL" ]; then
 		if [ "$DRY_RUN" ] || \
@@ -65,19 +73,20 @@ build_uboot()
 		return 0
 	fi
 
-	if [ "$RK_SECURITY" ];then
-		for IMAGE in u-boot/boot.img u-boot/recovery.img; do
-			[ ! -r $IMAGE ] || \
-				ln -rsf $IMAGE "$RK_SECURITY_FIRMWARE_DIR"
-		done
-	fi
-
 	LOADER="$(echo u-boot/*_loader_*.bin | head -1)"
-	ln -rsf "$LOADER" "$RK_FIRMWARE_DIR"/MiniLoaderAll.bin
-
-	ln -rsf u-boot/uboot.img "$RK_FIRMWARE_DIR"
-	[ ! -e u-boot/trust.img ] || \
-		ln -rsf u-boot/trust.img "$RK_FIRMWARE_DIR"
+	if [ "$RK_SECUREBOOT_AVB" ]; then
+	       "$RK_SCRIPTS_DIR/mk-security.sh" sign loader $LOADER \
+				"$RK_FIRMWARE_DIR"/MiniLoaderAll.bin
+	       "$RK_SCRIPTS_DIR/mk-security.sh" sign uboot u-boot/uboot.img \
+				"$RK_FIRMWARE_DIR"/uboot.img
+	       "$RK_SCRIPTS_DIR/mk-security.sh" sign trust u-boot/trust.img \
+				"$RK_FIRMWARE_DIR"/trust.img
+	else
+		ln -rsf "$LOADER" "$RK_FIRMWARE_DIR"/MiniLoaderAll.bin
+		ln -rsf u-boot/uboot.img "$RK_FIRMWARE_DIR"
+		[ ! -e u-boot/trust.img ] || \
+			ln -rsf u-boot/trust.img "$RK_FIRMWARE_DIR"
+	fi
 }
 
 # Hooks
@@ -92,6 +101,9 @@ usage_hook()
 clean_hook()
 {
 	make -C u-boot distclean
+
+	rm -rf "$RK_FIRMWARE_DIR/uboot.img"
+	rm -rf "$RK_FIRMWARE_DIR/MiniLoaderAll.bin"
 }
 
 BUILD_CMDS="loader uboot uefi"
@@ -99,25 +111,26 @@ build_hook()
 {
 	if echo $RK_UBOOT_CFG $RK_UBOOT_CFG_FRAGMENTS | grep -q aarch32 && \
 		[ "$RK_UBOOT_ARCH" = arm64 ]; then
-		echo -e "\e[31mWrong u-boot arch ($RK_UBOOT_ARCH) for config:" \
-			"$RK_UBOOT_CFG $RK_UBOOT_CFG_FRAGMENTS\n\e[0m"
+		error "Wrong u-boot arch ($RK_UBOOT_ARCH) for config:" \
+			"$RK_UBOOT_CFG $RK_UBOOT_CFG_FRAGMENTS\n"
 		export RK_UBOOT_ARCH=arm
 	fi
 
-	RK_UBOOT_TOOLCHAIN="$(get_toolchain "$RK_UBOOT_ARCH")"
+	RK_UBOOT_TOOLCHAIN="$(get_toolchain U-Boot "$RK_UBOOT_ARCH")"
+	[ "$RK_UBOOT_TOOLCHAIN" ] || exit 1
 
-	echo "Toolchain for loader (u-boot):"
-	echo "${RK_UBOOT_TOOLCHAIN:-gcc}"
+	message "Toolchain for loader (U-Boot):"
+	message "${RK_UBOOT_TOOLCHAIN:-gcc}"
 	echo
 
 	export UMAKE="./make.sh CROSS_COMPILE=$RK_UBOOT_TOOLCHAIN"
 
 	if [ "$DRY_RUN" ]; then
-		echo -e "\e[35mCommands of building $1:\e[0m"
+		notice "Commands of building $1:"
 	else
-		echo "=========================================="
-		echo "          Start building $1"
-		echo "=========================================="
+		message "=========================================="
+		message "          Start building $1"
+		message "=========================================="
 	fi
 
 	TARGET="$1"
@@ -140,6 +153,6 @@ build_hook_dry()
 	DRY_RUN=1 build_hook $@
 }
 
-source "${BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
+source "${RK_BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
 
 build_hook ${@:-loader}

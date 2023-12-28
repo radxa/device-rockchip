@@ -5,12 +5,12 @@ build_wifibt()
 	DEFAULT_ROOTFS_DIR=buildroot/output/$RK_BUILDROOT_CFG/target
 	ROOTFS_DIR="${1:-$DEFAULT_ROOTFS_DIR}"
 	if [ ! -d "$ROOTFS_DIR" ]; then
-		echo "$ROOTFS_DIR is not a dir!"
+		error "$ROOTFS_DIR is not a dir!"
 		return 1
 	fi
 
 	RK_WIFIBT_CHIP="${2:-$RK_WIFIBT_CHIP}"
-	"$SCRIPTS_DIR/post-wifibt.sh" "$(realpath "$ROOTFS_DIR")" \
+	"$RK_SCRIPTS_DIR/post-wifibt.sh" "$(realpath "$ROOTFS_DIR")" \
 		$([ -r "$ROOTFS_DIR/etc/os-release" ] || echo buildroot)
 	finish_build build_wifibt $@
 }
@@ -29,6 +29,6 @@ build_hook()
 	build_wifibt $@
 }
 
-source "${BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
+source "${RK_BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
 
 build_wifibt $@

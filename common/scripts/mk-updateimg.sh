@@ -1,6 +1,6 @@
 #!/bin/bash -e
 
-RK_PACK_TOOL_DIR="$SDK_DIR/tools/linux/Linux_Pack_Firmware/rockdev"
+RK_PACK_TOOL_DIR="$RK_SDK_DIR/tools/linux/Linux_Pack_Firmware/rockdev"
 
 gen_package_file()
 {
@@ -9,7 +9,7 @@ gen_package_file()
 	PKG_FILE="${3:-package-file}"
 
 	if [ ! -r "$PARAMETER" ]; then
-		echo -e "\e[31munable to parse $PARAMETER\e[0m"
+		error "Unable to parse $PARAMETER"
 		exit 1
 	fi
 
@@ -25,8 +25,8 @@ gen_package_file()
 
 	for part in $(rk_partition_parse_names "$PARAMETER"); do
 		if echo $part | grep -q "_b$"; then
-			# Not packing *_b partition for ota
-			if [ "$TYPE" = ota ]; then
+			# Not packing *_b partition for A/B OTA
+			if echo "$TYPE" | grep -wq "ab-ota"; then
 				continue
 			fi
 		fi
@@ -48,58 +48,67 @@ gen_package_file()
 	done
 }
 
-build_updateimg()
+do_build_updateimg()
 {
-	check_config RK_UPDATE || return 0
+	check_config RK_UPDATE || false
 
-	TARGET="${1:-$RK_ROCKDEV_DIR/update.img}"
-	TYPE="${2:-update}"
-	PKG_FILE="${3:-$RK_PACKAGE_FILE}"
+	TYPE="update${1:+-$1}"
 	OUT_DIR="$RK_OUTDIR/$TYPE"
 	IMAGE_DIR="$OUT_DIR/Image"
+	TARGET="$RK_FIRMWARE_DIR/$TYPE.img"
 
-	# Make sure that the firmware is ready
-	if [ ! -r "$RK_ROCKDEV_DIR/parameter.txt" ]; then
-		echo "Firmware is not ready, building it..."
-		"$SCRIPTS_DIR/mk-firmware.sh"
+	case "$TYPE" in
+		*ota*) PKG_FILE="$RK_OTA_PACKAGE_FILE" ;;
+		*) PKG_FILE="$RK_PACKAGE_FILE" ;;
+	esac
+
+	# Make sure that the basic firmwares are ready
+	if [ ! -r "$RK_FIRMWARE_DIR/parameter.txt" ]; then
+		notice "Basic firmwares are not ready, building it..."
+		RK_UPDATE= "$RK_SCRIPTS_DIR/mk-firmware.sh"
 	fi
 
 	# Make sure that the loader is ready
-	if [ ! -r "$RK_ROCKDEV_DIR/MiniLoaderAll.bin" ]; then
-		echo "Loader is not ready, building it..."
-		"$SCRIPTS_DIR/mk-loader.sh"
+	if [ ! -r "$RK_FIRMWARE_DIR/MiniLoaderAll.bin" ]; then
+		notice "Loader is not ready, building it..."
+		"$RK_SCRIPTS_DIR/mk-loader.sh"
 	fi
 
-	echo "=========================================="
-	echo "          Start packing $2 update image"
-	echo "=========================================="
+	message "=========================================="
+	message "          Start packing $TYPE image"
+	message "=========================================="
+
+	if ! rk_partition_parse_names "$RK_FIRMWARE_DIR/parameter.txt" | \
+		grep -qE "_a$|_b$"; then
+		warning "RK_AB_UPDATE enabled, without having A/B partitions!"
+	fi
 
 	rm -rf "$TARGET" "$OUT_DIR"
 	mkdir -p "$IMAGE_DIR"
 	cd "$IMAGE_DIR"
 
 	# Prepare images
-	ln -rsf "$RK_ROCKDEV_DIR"/* .
+	ln -rsf "$RK_FIRMWARE_DIR"/* .
 	rm -f update.img
 
 	# Prepare package-file
 	if [ "$PKG_FILE" ]; then
-		PKG_FILE="$CHIP_DIR/$PKG_FILE"
+		PKG_FILE="$RK_CHIP_DIR/$PKG_FILE"
 		if [ ! -r "$PKG_FILE" ]; then
-			echo "$PKG_FILE not exists!"
+			error "$PKG_FILE not exists!"
 			exit 1
 		fi
 		ln -rsf "$PKG_FILE" package-file
 	else
-		echo "Generating package-file for $TYPE:"
+		notice "Generating package-file for $TYPE:"
 		gen_package_file $TYPE
 		cat package-file
 	fi
 
-	echo "Packing $TARGET for $TYPE..."
+	notice "Packing $TARGET for $TYPE..."
 
 	if [ ! -r MiniLoaderAll.bin ]; then
-		echo -e "\e[31mMiniLoaderAll.bin is missing\e[0m"
+		error "MiniLoaderAll.bin is missing"
 		exit 1
 	fi
 
@@ -112,30 +121,34 @@ build_updateimg()
 	ln -rsf "$IMAGE_DIR/update.img" "$OUT_DIR"
 	ln -rsf "$IMAGE_DIR/update.img" "$TARGET"
 
-	finish_build build_updateimg $@
+	if echo "$TYPE" | grep -wq "ab"; then
+		ln -sf "$(basename "$TARGET")" \
+			"$RK_FIRMWARE_DIR/${TYPE/-ab/}.img"
+	fi
 }
 
-build_ota_updateimg()
+build_updateimg()
 {
-	check_config RK_AB_UPDATE || return 0
-
-	echo "Make A/B update image for OTA"
-
-	build_updateimg "$RK_ROCKDEV_DIR/update_ota.img" ota \
-		$RK_OTA_PACKAGE_FILE
+	if [ "$RK_AB_UPDATE" ]; then
+		notice "Make A/B update image"
+		do_build_updateimg ab
+	else
+		notice "Make update image"
+		do_build_updateimg
+	fi
 
 	finish_build
 }
 
-build_ab_updateimg()
+build_ota_updateimg()
 {
-	check_config RK_AB_UPDATE || return 0
-
-	build_ota_updateimg
-
-	echo "Make A/B update image"
-
-	build_updateimg "$RK_ROCKDEV_DIR/update_ab.img" ab
+	if [ "$RK_AB_UPDATE" ]; then
+		notice "Make A/B update image for OTA"
+		do_build_updateimg ab-ota
+	else
+		notice "Make update image for OTA"
+		do_build_updateimg ota
+	fi
 
 	finish_build
 }
@@ -145,18 +158,15 @@ build_ab_updateimg()
 usage_hook()
 {
 	echo -e "edit-package-file                 \tedit package-file"
-	echo -e "edit-ota-package-file             \tedit A/B OTA package-file"
+	echo -e "edit-ota-package-file             \tedit package-file for OTA"
 	echo -e "updateimg                         \tbuild update image"
-	echo -e "otapackage                        \tbuild A/B OTA update image"
+	echo -e "ota-updateimg                     \tbuild update image for OTA"
 }
 
 clean_hook()
 {
-	rm -rf "$RK_OUTDIR/update"
-	rm -rf "$RK_OUTDIR/ota"
-	rm -rf "$RK_OUTDIR/ab"
+	rm -rf "$RK_OUTDIR/*update*"
 	rm -rf "$RK_FIRMWARE_DIR/*update.img"
-	rm -rf "$RK_ROCKDEV_DIR/*update.img"
 }
 
 INIT_CMDS="edit-package-file edit-ota-package-file"
@@ -165,11 +175,11 @@ init_hook()
 	case "$1" in
 		edit-package-file)
 			BASE_CFG=RK_PACKAGE_FILE
-			PKG_FILE="$CHIP_DIR/package-file"
+			PKG_FILE=package-file
 			;;
 		edit-ota-package-file)
-			BASE_CFG=RK_AB_OTA_PACKAGE_FILE
-			PKG_FILE="$CHIP_DIR/ab-ota-package-file"
+			BASE_CFG=RK_OTA_PACKAGE_FILE
+			PKG_FILE=ota-package-file
 			;;
 		*) return 0 ;;
 	esac
@@ -178,9 +188,9 @@ init_hook()
 	if ! check_config $BASE_CFG &>/dev/null; then
 		sed -i '/$BASE_CFG/d' "$RK_CONFIG"
 		echo "${BASE_CFG}_CUSTOM=y" >> "$RK_CONFIG"
-		echo "$BASE_CFG=$PKG_FILE" >> "$RK_CONFIG"
-                "$SCRIPTS_DIR/mk-config.sh" olddefconfig &>/dev/null
-                "$SCRIPTS_DIR/mk-config.sh" savedefconfig &>/dev/null
+		echo "$BASE_CFG=\"$PKG_FILE\"" >> "$RK_CONFIG"
+		"$RK_SCRIPTS_DIR/mk-config.sh" olddefconfig &>/dev/null
+		"$RK_SCRIPTS_DIR/mk-config.sh" savedefconfig &>/dev/null
 	fi
 }
 
@@ -189,45 +199,40 @@ pre_build_hook()
 {
 	case "$1" in
 		edit-package-file)
-			check_config RK_PACKAGE_FILE || return 0
-			PKG_FILE="$CHIP_DIR/$RK_PACKAGE_FILE" ;;
+			check_config RK_PACKAGE_FILE || false
+			PKG_FILE="$RK_CHIP_DIR/$RK_PACKAGE_FILE" ;;
 		edit-ota-package-file)
-			check_config RK_AB_OTA_PACKAGE_FILE || return 0
-			PKG_FILE="$CHIP_DIR/$RK_AB_OTA_PACKAGE_FILE"
+			check_config RK_OTA_PACKAGE_FILE || false
+			PKG_FILE="$RK_CHIP_DIR/$RK_OTA_PACKAGE_FILE"
 			;;
 		*) return 0 ;;
 	esac
 
-	PKG_FILE="$(realpath "$PKG_FILE")"
+	PKG_FILE="$(realpath -m "$PKG_FILE")"
 	if [ ! -r "$PKG_FILE" ]; then
-		echo "Generating template $PKG_FILE"
-		gen_package_file template "$CHIP_DIR/$RK_PARAMETER" "$PKG_FILE"
+		notice "Generating template $PKG_FILE"
+		gen_package_file template \
+			"$RK_CHIP_DIR/$RK_PARAMETER" "$PKG_FILE"
 	fi
 	eval ${EDITOR:-vi} "$PKG_FILE"
 
 	finish_build $@
 }
 
-POST_BUILD_CMDS="updateimg otapackage"
+POST_BUILD_CMDS="updateimg ota-updateimg"
 post_build_hook()
 {
 	case "$1" in
-		updateimg)
-			if [ "$RK_AB_UPDATE" ]; then
-				build_ab_updateimg
-			else
-				build_updateimg
-			fi
-			;;
-		otapackage) build_ota_updateimg ;;
+		updateimg) build_updateimg ;;
+		ota-updateimg) build_ota_updateimg ;;
 		*) usage ;;
 	esac
 }
 
-source "${BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
+source "${RK_BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
 
 case "$@" in
-	edit-package-file|edit-ota-package-file)
+	edit-*package-file)
 		init_hook $@
 		pre_build_hook $@
 		;;

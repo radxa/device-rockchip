@@ -1,13 +1,13 @@
 #!/bin/bash -e
 
-SCRIPTS_DIR="${SCRIPTS_DIR:-$(dirname "$(realpath "$0")")}"
-SDK_DIR="${SDK_DIR:-$SCRIPTS_DIR/../../../..}"
+RK_SCRIPTS_DIR="${RK_SCRIPTS_DIR:-$(dirname "$(realpath "$0")")}"
+RK_SDK_DIR="${RK_SDK_DIR:-$RK_SCRIPTS_DIR/../../../..}"
 
 BUILDROOT_BOARD=$1
-ROOTFS_OUTPUT_DIR="${2:-$SDK_DIR/output/buildroot}"
-BUILDROOT_DIR="$SDK_DIR/buildroot"
+ROOTFS_OUTPUT_DIR="${2:-$RK_SDK_DIR/output/buildroot}"
+BUILDROOT_DIR="$RK_SDK_DIR/buildroot"
 
-"$SCRIPTS_DIR/check-buildroot.sh"
+"$RK_SCRIPTS_DIR/check-buildroot.sh"
 
 BUILDROOT_OUTPUT_DIR="$BUILDROOT_DIR/output/$BUILDROOT_BOARD"
 BUILDROOT_CONFIG="$BUILDROOT_OUTPUT_DIR/.config"
@@ -44,8 +44,11 @@ if [ "$2" = make ]; then
 		*) TARGET="$1" ;;
 	esac
 
-	shift
-	echo "Buildroot make: $TARGET $@"
+	if [ "$1" ]; then
+		shift
+		message "Buildroot make: $TARGET $@"
+	fi
+
 	make -C "$BUILDROOT_DIR" O="$BUILDROOT_OUTPUT_DIR" $TARGET $@
 	exit
 fi
@@ -60,19 +63,16 @@ make -C "$BUILDROOT_DIR" O="$BUILDROOT_OUTPUT_DIR" ${BUILDROOT_BOARD}_defconfig
 # Warn about config changes
 if [ -r "$BUILDROOT_CONFIG_ORIG" ]; then
 	if ! diff "$BUILDROOT_CONFIG" "$BUILDROOT_CONFIG_ORIG"; then
-		echo -e "\e[35m"
-		echo "Buildroot config changed!"
-		echo "You might need to clean it before building:"
-		echo "rm -rf $BUILDROOT_OUTPUT_DIR"
-		echo -e "\e[0m"
-		echo
+		warning "Buildroot config changed!"
+		warning "You might need to clean it before building:"
+		warning "rm -rf $BUILDROOT_OUTPUT_DIR\n"
 	fi
 fi
 
 # Use buildroot images dir as image output dir
 IMAGE_DIR="$BUILDROOT_OUTPUT_DIR/images"
 rm -rf "$ROOTFS_OUTPUT_DIR"
-mkdir -p "$IMAGE_DIR"
+mkdir -p "$IMAGE_DIR" "$(dirname "$ROOTFS_OUTPUT_DIR")"
 ln -rsf "$IMAGE_DIR" "$ROOTFS_OUTPUT_DIR"
 cd "${RK_LOG_DIR:-$ROOTFS_OUTPUT_DIR}"
 
@@ -80,18 +80,31 @@ LOG_PREFIX="br-$(basename "$BUILDROOT_OUTPUT_DIR")"
 LOG_FILE="$(start_log "$LOG_PREFIX" 2>/dev/null || echo $PWD/$LOG_PREFIX.log)"
 ln -rsf "$LOG_FILE" br.log
 
+case "$BUILDROOT_BOARD" in
+	*_recovery) ln -rsf "$LOG_FILE" br-recovery.log ;;
+	*_pcba) ln -rsf "$LOG_FILE" br-pcba.log ;;
+	*_ramboot)
+		ln -rsf "$LOG_FILE" br-ramboot.log
+		"$RK_SCRIPTS_DIR/check-security.sh" ramboot
+		;;
+	*)
+		ln -rsf "$LOG_FILE" br-rootfs.log
+		"$RK_SCRIPTS_DIR/check-security.sh" system
+		;;
+esac
+
 # Buildroot doesn't like it
 unset LD_LIBRARY_PATH
 
+touch "$BUILDROOT_OUTPUT_DIR/.stamp_build_start"
 if ! "$BUILDROOT_DIR"/utils/brmake -C "$BUILDROOT_DIR" O="$BUILDROOT_OUTPUT_DIR"; then
-	echo "Failed to build $BUILDROOT_BOARD:"
+	error "Failed to build $BUILDROOT_BOARD:"
 	tail -n 100 "$LOG_FILE"
-	echo -e "\e[35m"
-	echo "Please check details in $LOG_FILE"
-	echo -e "\e[0m"
+	error "Please check details in $LOG_FILE"
 	exit 1
 fi
+touch "$BUILDROOT_OUTPUT_DIR/.stamp_build_finish"
 
-echo "Log saved on $LOG_FILE"
-echo "Generated images:"
+notice "Log saved on $LOG_FILE"
+notice "Generated images:"
 ls "$ROOTFS_OUTPUT_DIR"/rootfs.*
