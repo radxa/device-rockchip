@@ -1,0 +1,128 @@
+#
+
+choice
+	prompt "USB gadget"
+
+config RK_USB_DEFAULT
+	bool "auto"
+	help
+	  Install USB gadget on non-buildroot OS.
+
+config RK_USB_ENABLED
+	bool "install"
+
+config RK_USB_DISABLED
+	bool "not install"
+
+endchoice # USB gadget
+
+if !RK_USB_DISABLED
+
+menu "USB gadget configs"
+
+menuconfig RK_USB_ADBD
+	bool "Android Debug Bridge Daemon (adbd)"
+	default y
+
+if RK_USB_ADBD
+
+config RK_USB_ADBD_TCP_PORT
+	int "TCP port"
+	default 5555
+
+config RK_USB_ADBD_BASH
+	bool "prefer using bash"
+	default y
+
+menuconfig RK_USB_ADBD_SECURE
+	bool "access control"
+
+if RK_USB_ADBD_SECURE
+
+config RK_USB_ADBD_PASSWORD
+	string "password"
+
+config RK_USB_ADBD_KEYS
+	string "Android public keys"
+	default "~/.android/adbkey.pub" if RK_USB_ADBD_PASSWORD = ""
+
+endif # secure
+endmenuconfig # secure
+
+endif # adbd
+endmenuconfig # adbd
+
+config RK_USB_MTP
+	bool "Media Transfer Protocal (MTP)"
+
+config RK_USB_ACM
+	bool "Abstract Control Model (ACM)"
+
+config RK_USB_NTB
+	bool "Rockchip NPU Transfer Bridge (NTB)"
+
+config RK_USB_UVC
+	bool "USB Video Class (UVC)"
+
+config RK_USB_UAC1
+	bool "USB Audio Class (UAC1)"
+
+config RK_USB_UAC2
+	bool "USB Audio Class (UAC2)"
+
+config RK_USB_HID
+	bool "Human Interface Devices (HID)"
+
+config RK_USB_RNDIS
+	bool "Remote Network Driver Interface Specification (RNDIS)"
+
+menuconfig RK_USB_UMS
+	bool "USB mass storage (UMS)"
+
+if RK_USB_UMS
+
+config RK_USB_UMS_FILE
+	string "block device or image file"
+	default "/userdata/ums_shared.img"
+	help
+	  Block device or image file to share through UMS.
+
+config RK_USB_UMS_SIZE
+	string "size of image file"
+	default "256M"
+
+config RK_USB_UMS_FSTYPE
+	string "filesystem type"
+	default "vfat"
+
+menuconfig RK_USB_UMS_MOUNT
+	bool "mount on device"
+	default y
+	help
+	  Mount when USB disconnected, umount when connected.
+
+	  Warning:
+	  Umounting UMS may failed if it is still in use.
+
+config RK_USB_UMS_MOUNTPOINT
+	string "mountpoint"
+	depends on RK_USB_UMS_MOUNT
+	default "/mnt/ums"
+
+endmenuconfig # UMS mount
+
+config RK_USB_UMS_RO
+	bool "read-only on PC"
+
+endif # UMS
+endmenuconfig # UMS
+
+config RK_USB_EXTRA
+	string "extra USB gadget configs"
+
+config RK_USB_HOOKS
+	string "hook scripts"
+
+endmenu # USB gadget
+
+endif # !USB gadget disabled
