@@ -23,12 +23,11 @@ build_all()
 		"$RK_SCRIPTS_DIR/mk-security.sh" security-ramboot
 	[ -z "$RK_RECOVERY" ] || "$RK_SCRIPTS_DIR/mk-recovery.sh"
 
-	[ -z "$RK_RTOS" ] || "$RK_SCRIPTS_DIR/mk-rtos.sh"
+	[ -z "$RK_AMP" ] || "$RK_SCRIPTS_DIR/mk-amp.sh"
 
 	"$RK_SCRIPTS_DIR/mk-firmware.sh"
 
-	[ -z "$RK_KERNEL" ] || \
-		"$RK_SCRIPTS_DIR/mk-kernel.sh" linux-headers "$RK_FIRMWARE_DIR"
+	[ -z "$RK_KERNEL" ] || "$RK_SCRIPTS_DIR/mk-kernel.sh" linux-headers
 
 	finish_build
 }
@@ -41,10 +40,10 @@ build_release()
 
 	shift
 	RELEASE_BASE_DIR="$RK_OUTDIR/$BOARD${1:+/$1}"
-	case "$(grep "^ID=" "$RK_OUTDIR/os-release" 2>/dev/null)" in
-		ID=buildroot) RELEASE_DIR="$RELEASE_BASE_DIR/BUILDROOT" ;;
-		ID=debian) RELEASE_DIR="$RELEASE_BASE_DIR/DEBIAN" ;;
-		ID=poky) RELEASE_DIR="$RELEASE_BASE_DIR/YOCTO" ;;
+	case "$(readlink "$RK_OUTDIR/rootfs")" in
+		buildroot) RELEASE_DIR="$RELEASE_BASE_DIR/BUILDROOT" ;;
+		debian) RELEASE_DIR="$RELEASE_BASE_DIR/DEBIAN" ;;
+		yocto) RELEASE_DIR="$RELEASE_BASE_DIR/YOCTO" ;;
 		*) RELEASE_DIR="$RELEASE_BASE_DIR" ;;
 	esac
 	[ "$1" ] || RELEASE_DIR="$RELEASE_DIR/$(date  +%Y%m%d_%H%M%S)"
@@ -63,8 +62,7 @@ build_release()
 		mkdir -p "$RELEASE_DIR/kernel"
 
 		message "Saving linux-headers..."
-		ln -rvsf "$RELEASE_DIR/IMAGES/linux-headers.tar" \
-			"$RELEASE_DIR/kernel/"
+		cp -rv "$RK_OUTDIR/linux-headers" "$RELEASE_DIR/kernel/"
 
 		message "Saving kernel files..."
 		cp -v kernel/.config kernel/System.map kernel/vmlinux \
@@ -89,7 +87,10 @@ build_release()
 	ln -vsf .config "$RELEASE_DIR/build_info"
 
 	message "Saving build logs..."
-	cp -rvp "$RK_LOG_BASE_DIR" "$RELEASE_DIR/"
+	cp -rvp "$RK_LOG_BASE_DIR/" "$RELEASE_DIR/"
+
+	rm -rf "$RK_OUTDIR/release"
+	ln -vsf "$RELEASE_DIR" "$RK_OUTDIR/release"
 
 	finish_build
 }

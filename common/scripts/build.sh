@@ -51,27 +51,27 @@ rk_log()
 
 message()
 {
-	rk_log 36 "$@"
+	rk_log 36 "$@" # light blue
 }
 
 notice()
 {
-	rk_log 35 "$@"
+	rk_log 35 "$@" # purple
 }
 
 warning()
 {
-	rk_log 34 "$@"
+	rk_log 34 "$@" # dark blue
 }
 
 error()
 {
-	rk_log 91 "$@"
+	rk_log 91 "$@" # light red
 }
 
 fatal()
 {
-	rk_log 31 "$@"
+	rk_log 31 "$@" # dark red
 }
 
 finish_build()
@@ -105,7 +105,7 @@ check_config()
 	return 1
 }
 
-kernel_version_real()
+kernel_version_raw()
 {
 	[ -d kernel ] || return 0
 
@@ -131,7 +131,7 @@ kernel_version()
 			;;
 	esac
 
-	kernel_version_real
+	kernel_version_raw
 }
 
 start_log()
@@ -219,7 +219,9 @@ set +a
 err_handler()
 {
 	ret=${1:-$?}
-	[ "$ret" -eq 0 ] && return
+	if [ "$ret" -eq 0 ]; then
+		return 0
+	fi
 
 	fatal "ERROR: Running $BASH_SOURCE - ${2:-${FUNCNAME[1]}} failed!"
 	fatal "ERROR: exit code $ret from line ${BASH_LINENO[0]}:"
@@ -233,35 +235,69 @@ err_handler()
 	exit $ret
 }
 
+# option_check "<supported commands>" <option 1> [option 2] ...
+option_check()
+{
+	CMDS="$1"
+	shift
+
+	for opt in $@; do
+		for cmd in $CMDS; do
+			if [ "$cmd" = "${opt%%:*}" ]; then
+				return 0
+			fi
+		done
+	done
+	return 1
+}
+
+# hook_check <hook> <stage> <cmd>
+hook_check()
+{
+	case "$2" in
+		init | pre-build | build | post-build) ;;
+		*) return 0 ;;
+	esac
+
+	CMDS="$(sed -n \
+		"s@^RK_${2//-/_}_CMDS[^ ]*\(.*\)\" # $(realpath "$1")\$@\1@ip" \
+		"$RK_PARSED_CMDS")"
+
+	if echo "$CMDS" | grep -wq default; then
+		return 0
+	fi
+
+	option_check "$CMDS" "$3"
+}
+
+# Run specific hook scripts
 run_hooks()
 {
 	DIR="$1"
 	shift
 
+	# Prefer chips' hooks than the common ones
 	for dir in "$RK_CHIP_DIR/$(basename "$DIR")/" "$DIR"; do
 		[ -d "$dir" ] || continue
 
 		for hook in $(find "$dir" -maxdepth 1 -name "*.sh" | sort); do
-			case "$1" in
-				init | pre-build | build | post-build)
-					grep "$(realpath "$hook")$" \
-						"$RK_PARSED_CMDS" | \
-						grep -i "RK_${1//-/_}_CMDS" | \
-						grep -qE "default|${2%:*}" || \
-						continue
-			esac
+			# Ignore unrelated hooks
+			hook_check "$hook" "$1" "$2" || continue
 
-			"$hook" $@ && continue
-			HOOK_RET=$?
-			err_handler $HOOK_RET "${FUNCNAME[0]} $*" "$hook $*"
-			exit $HOOK_RET
+			if ! "$hook" $@; then
+				HOOK_RET=$?
+				err_handler $HOOK_RET \
+					"${FUNCNAME[0]} $*" "$hook $*"
+				exit $HOOK_RET
+			fi
 		done
 	done
 }
 
+# Run build hook scripts for normal stages
 run_build_hooks()
 {
-	# Don't log these hooks
+	# Don't log these stages (either interactive or with useless logs)
 	case "$1" in
 		init | pre-build | make-* | usage | parse-cmds)
 			run_hooks "$RK_BUILD_HOOK_DIR" $@ || true
@@ -280,6 +316,7 @@ run_build_hooks()
 	fi
 }
 
+# Run post hook scripts for post-rootfs stage
 run_post_hooks()
 {
 	LOG_FILE="$(start_log post-rootfs)"
@@ -293,36 +330,8 @@ run_post_hooks()
 	fi
 }
 
-option_check()
+setup_environments()
 {
-	CMDS="$1"
-	shift
-
-	for opt in $@; do
-		for cmd in $CMDS; do
-			# NOTE: There might be patterns in commands
-			echo "${opt%%:*}" | grep -q "^$cmd$" || continue
-			return 0
-		done
-	done
-
-	return 1
-}
-
-main()
-{
-	[ -z "$DEBUG" ] || set -x
-
-	trap 'err_handler' ERR
-	set -eE
-
-	# Save intial envionments
-	unset INITIAL_SESSION
-	INITIAL_ENV=$(mktemp -u)
-	env > "$INITIAL_ENV"
-
-	[ "$RK_SESSION" ] || INITIAL_SESSION=1
-
 	export LC_ALL=C
 
 	export RK_SCRIPTS_DIR="$(dirname "$(realpath "$BASH_SOURCE")")"
@@ -334,8 +343,8 @@ main()
 
 	export RK_DEFAULT_TARGET="all"
 	export RK_DATA_DIR="$RK_COMMON_DIR/data"
-	export RK_TOOL_DIR="$RK_COMMON_DIR/tools"
-	export RK_IMAGE_DIR="$RK_COMMON_DIR/images"
+	export RK_TOOLS_DIR="$RK_COMMON_DIR/tools"
+	export RK_EXTRA_PARTS_DIR="$RK_COMMON_DIR/extra-parts"
 	export RK_KBUILD_DIR="$RK_COMMON_DIR/linux-kbuild"
 	export RK_CONFIG_IN="$RK_COMMON_DIR/configs/Config.in"
 
@@ -348,7 +357,7 @@ main()
 
 	export RK_OUTDIR="$RK_SDK_DIR/output"
 	export RK_PARSED_CMDS="$RK_OUTDIR/.parsed_cmds"
-	export RK_EXTRA_PART_OUTDIR="$RK_OUTDIR/extra-part"
+	export RK_EXTRA_PART_OUTDIR="$RK_OUTDIR/extra-parts"
 	export RK_SESSION_DIR="$RK_OUTDIR/sessions"
 	export RK_SESSION="${RK_SESSION:-$(date +%F_%H-%M-%S)}"
 	export RK_LOG_DIR="$RK_SESSION_DIR/$RK_SESSION"
@@ -359,22 +368,88 @@ main()
 	export RK_DEFCONFIG_LINK="$RK_OUTDIR/defconfig"
 	export RK_OWNER="$(stat --format %U "$RK_SDK_DIR")"
 	export RK_OWNER_UID="$(stat --format %u "$RK_SDK_DIR")"
+}
+
+check_sdk() {
+	if ! echo "$RK_SCRIPTS_DIR" | \
+		grep -q "device/rockchip/common/scripts$"; then
+		fatal "SDK corrupted!"
+		error "Running $BASH_SOURCE from $RK_SCRIPTS_DIR:"
+		ls --file-type "$RK_SCRIPTS_DIR"
+		exit 1
+	fi
+
+	"$RK_SCRIPTS_DIR/check-sdk.sh"
+
+	# Detect sudo(root)
 	unset RK_SUDO_ROOT
 	if [ "$RK_OWNER_UID" -ne 0 ] && [ "${USER:-$(id -un)}" = "root" ]; then
 		export RK_SUDO_ROOT=1
+		notice "Running within sudo(root) environment!"
+		echo
+	fi
+}
+
+makefile_options()
+{
+	unset DEBUG
+
+	setup_environments
+	check_sdk >&2 || exit 1
+
+	local MAKE_USAGE="$RK_OUTDIR/.make_usage"
+	local MAKE_TARGETS="$RK_OUTDIR/.make_targets"
+
+	if [ ! -d "$RK_OUTDIR" ]; then
+		MAKE_USAGE=$(mktemp -u .rksdk.XXX)
+		MAKE_TARGETS=$(mktemp -u .rksdk.XXX)
 	fi
 
-	# For Makefile
-	case "$@" in
+	if [ ! -r "$MAKE_USAGE" ] || \
+		[ "$(find "$RK_SCRIPTS_DIR" -cnewer "$MAKE_USAGE")" ]; then
+		run_build_hooks make-usage > "$MAKE_USAGE"
+	fi
+
+	if [ ! -r "$MAKE_TARGETS" ] || \
+		[ "$(find "$RK_SCRIPTS_DIR" -cnewer "$MAKE_TARGETS")" ]; then
+		run_build_hooks make-targets > "$MAKE_TARGETS"
+	fi
+
+	case "$1" in
 		make-targets)
-			# Chip targets
+			# Report chip targets as well
 			ls "$RK_CHIPS_DIR"
-			;&
-		make-usage)
-			run_build_hooks "$@"
-			rm -f "$INITIAL_ENV"
-			exit 0 ;;
+
+			cat "$MAKE_TARGETS"
+			;;
+		make-usage) cat "$MAKE_USAGE" ;;
 	esac
+
+	rm -rf /tmp/.rksdk*
+	exit 0
+}
+
+main()
+{
+	# Early handler of Makefile options
+	case "$@" in
+		make-*) makefile_options $@ ;;
+	esac
+
+	[ -z "$DEBUG" ] || set -x
+
+	trap 'err_handler' ERR
+	set -eE
+
+	# Save intial envionments
+	unset INITIAL_SESSION
+	INITIAL_ENV=$(mktemp -u)
+	env > "$INITIAL_ENV"
+
+	[ "$RK_SESSION" ] || INITIAL_SESSION=1
+
+	# Setup basic environments
+	setup_environments
 
 	# Log SDK information
 	MANIFEST="$RK_SDK_DIR/.repo/manifest.xml"
@@ -401,7 +476,8 @@ main()
 	fatal "fatal"
 	echo
 
-	"$RK_SCRIPTS_DIR/check-sdk.sh"
+	# Check SDK requirements
+	check_sdk
 
 	# Check for session validation
 	if [ -z "$INITIAL_SESSION" ] && [ ! -d "$RK_LOG_DIR" ]; then
@@ -440,12 +516,11 @@ main()
 
 	# Parse supported commands
 	if [ ! -r "$RK_PARSED_CMDS" ] || \
-		find "$RK_SCRIPTS_DIR" -cnewer "$RK_PARSED_CMDS" | \
-			grep -q ""; then
+		[ "$(find "$RK_SCRIPTS_DIR" -cnewer "$RK_PARSED_CMDS")" ]; then
 		message "Parsing supported commands...\n"
 		rm -rf "$RK_PARSED_CMDS"
 		run_build_hooks parse-cmds
-        fi
+	fi
 	source "$RK_PARSED_CMDS"
 
 	# Options checking
@@ -472,7 +547,7 @@ main()
 				;;
 			post-rootfs)
 				if [ "$opt" = "$1" -a -d "$2" ]; then
-					# Hide other args from build stages
+					# Hide args from later checks
 					OPTIONS=$opt
 					break
 				fi
@@ -491,14 +566,6 @@ main()
 
 		usage
 	done
-
-	# Check /etc/passwd directly for pseudo environment
-	if ! cut -d':' -f3 /etc/passwd | grep -q "^$RK_OWNER_UID$"; then
-		error "ERROR: Unknown source owner($RK_OWNER_UID)"
-		error "Please create it:"
-		error "sudo useradd rk_compiler -u $RK_OWNER_UID"
-		exit 1
-	fi
 
 	# Prepare log dirs
 	if [ ! -d "$RK_LOG_DIR" ]; then
@@ -537,6 +604,7 @@ main()
 	# Load config environments
 	source "$RK_CONFIG"
 	cp "$RK_CONFIG" "$RK_LOG_DIR"
+	export RK_KERNEL_VERSION="$(kernel_version)"
 
 	if [ -z "$INITIAL_SESSION" ]; then
 		# Inherit session environments
@@ -567,7 +635,6 @@ main()
 
 			if grep -q "^RK_KERNEL_VERSION=" "$RK_CUSTOM_ENV"; then
 				warning "Custom RK_KERNEL_VERSION ignored!"
-				load_config RK_KERNEL_VERSION
 			fi
 
 			if grep -q "^RK_ROOTFS_SYSTEM=" "$RK_CUSTOM_ENV"; then
@@ -577,12 +644,15 @@ main()
 		fi
 	fi
 
+	# Parse partition table
 	source "$RK_PARTITION_HELPER"
 	rk_partition_init
 
 	set +a
 
-	export RK_KERNEL_VERSION_REAL=$(kernel_version_real)
+	# The real kernel version: 4.4/4.19/5.10/6.1, etc.
+	export RK_KERNEL_VERSION_RAW=$(kernel_version_raw)
+	export RK_KERNEL_VERSION="$(kernel_version)"
 
 	# Handle special commands
 	case "$OPTIONS" in
@@ -632,7 +702,7 @@ main()
 	message "=========================================="
 	env | grep -E "^RK_.*=.+" | grep -vE "PARTITION_[0-9]" | \
 		grep -vE "=\"\"$|_DEFAULT=y|^RK_DEFAULT_TARGET|CMDS=" | \
-		grep -vE "^RK_CONFIG|_BASE_CFG=|_LINK=|DIR=|_ENV=|_NAME=" | \
+		grep -vE "^RK_CONFIG|_BASE_CFG=|_LINK=|DIR=|_ENV=|_NAME=|_DTB=" | \
 		grep -vE "_HELPER=|_SUPPORTS=|_ARM64=|_ARM=|_HOST=" | \
 		grep -vE "^RK_ROOTFS_SYSTEM_|^RK_YOCTO_DISPLAY_PLATFORM_" | sort
 	echo

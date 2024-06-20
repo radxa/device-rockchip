@@ -1,22 +1,20 @@
 #
 
-comment "Debian is not supported for this chip"
-	depends on !RK_DEBIAN_SUPPORTS
-
 config RK_DEBIAN_SUPPORTS
 	bool
 	default y if RK_CHIP_FAMILY = "rk3288" || RK_CHIP_FAMILY = "px30" || \
 		RK_CHIP_FAMILY = "rk3326" || RK_CHIP_FAMILY = "rk3328" || \
 		RK_CHIP_FAMILY = "rk3399" || RK_CHIP_FAMILY = "rk3399pro" || \
 		RK_CHIP_FAMILY = "rk3566_rk3568" || RK_CHIP_FAMILY = "rk3588" || \
-		RK_CHIP_FAMILY = "rk3562" || RK_CHIP_FAMILY = "rk3528"
+		RK_CHIP_FAMILY = "rk3562" || RK_CHIP_FAMILY = "rk3528" || \
+		RK_CHIP_FAMILY = "rk3576"
 
-if RK_DEBIAN_SUPPORTS
+comment "Debian is not supported for this chip"
+	depends on !RK_DEBIAN_SUPPORTS
 
-menu "Debian"
-
-config RK_DEBIAN
-	bool "debian"
+menuconfig RK_DEBIAN
+	bool "Debian"
+	depends on RK_DEBIAN_SUPPORTS
 	default y
 
 if RK_DEBIAN
@@ -25,11 +23,11 @@ config RK_DEBIAN_VERSION
 	string
 	default "buster" if RK_DEBIAN_BUSTER
 	default "bullseye" if RK_DEBIAN_BULLSEYE
-	default "bookworm" if RK_DEBIAN_BOOKWORM || RK_KERNEL_VERSION = "6.1"
+	default "bookworm" if RK_DEBIAN_BOOKWORM
 
 choice
-	prompt "debian version"
-	default RK_DEBIAN_BULLSEYE
+	prompt "distro"
+	default RK_DEBIAN_BOOKWORM
 
 config RK_DEBIAN_BUSTER
 	bool "buster"
@@ -40,7 +38,7 @@ config RK_DEBIAN_BULLSEYE
 config RK_DEBIAN_BOOKWORM
 	bool "bookworm"
 
-endchoice
+endchoice # distro
 
 config RK_DEBIAN_ARCH
 	string
@@ -48,7 +46,7 @@ config RK_DEBIAN_ARCH
 	default "arm64" if RK_DEBIAN_ARM64
 
 choice
-	prompt "debian rootfs arch"
+	prompt "rootfs arch"
 
 config RK_DEBIAN_ARM64
 	bool "arm64"
@@ -57,10 +55,11 @@ config RK_DEBIAN_ARM64
 config RK_DEBIAN_ARMHF
 	bool "armhf"
 
-endchoice
+endchoice # rootfs arch
 
-endif
+config RK_DEBIAN_MIRROR
+	string "mirror source for APT"
+	default "mirrors.ustc.edu.cn"
 
-endmenu # Debian
-
-endif
+endif # Debian
+endmenuconfig # Debian

@@ -9,10 +9,7 @@ link_image() {
 
 build_firmware()
 {
-	if ! which fakeroot &>/dev/null; then
-		error "fakeroot not found! (sudo apt-get install fakeroot)"
-		exit 1
-	fi
+	"$RK_SCRIPTS_DIR/check-package.sh" fakeroot
 
 	mkdir -p "$RK_FIRMWARE_DIR"
 
@@ -24,11 +21,22 @@ build_firmware()
 
 	link_image "$RK_CHIP_DIR/$RK_PARAMETER" "$RK_FIRMWARE_DIR/parameter.txt"
 
-	"$RK_SCRIPTS_DIR/mk-extra-part.sh"
+	"$RK_SCRIPTS_DIR/mk-extra-parts.sh"
+
+	# Make sure that the loader is ready
+	if [ ! -r "$RK_FIRMWARE_DIR/MiniLoaderAll.bin" ]; then
+		notice "Loader is not ready, building it..."
+		"$RK_SCRIPTS_DIR/mk-loader.sh"
+	fi
 
 	notice "Packed files:"
 	for f in "$RK_FIRMWARE_DIR"/*; do
 		NAME=$(basename "$f")
+
+		if [ ! -r "$f" ]; then
+			warning "$NAME($(readlink -f "$f")) is invalid!"
+			continue
+		fi
 
 		echo -n "$NAME"
 		if [ -L "$f" ]; then

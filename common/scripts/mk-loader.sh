@@ -93,9 +93,10 @@ build_uboot()
 
 usage_hook()
 {
-	echo -e "loader[:cmds]                    \tbuild loader (uboot)"
-	echo -e "uboot[:cmds]                     \tbuild u-boot"
-	echo -e "uefi[:cmds]                      \tbuild uefi"
+	echo -e "loader[:dry-run]                 \tbuild loader (u-boot)"
+	echo -e "uboot[:dry-run]                  \tbuild u-boot"
+	echo -e "u-boot[:dry-run]                 \talias of uboot"
+	echo -e "uefi[:dry-run]                   \tbuild uefi"
 }
 
 clean_hook()
@@ -106,7 +107,7 @@ clean_hook()
 	rm -rf "$RK_FIRMWARE_DIR/MiniLoaderAll.bin"
 }
 
-BUILD_CMDS="loader uboot uefi"
+BUILD_CMDS="loader uboot u-boot uefi"
 build_hook()
 {
 	if echo $RK_UBOOT_CFG $RK_UBOOT_CFG_FRAGMENTS | grep -q aarch32 && \
@@ -135,10 +136,9 @@ build_hook()
 
 	TARGET="$1"
 	shift
-	[ "$1" != cmds ] || shift
 
 	case "$TARGET" in
-		uboot | loader) build_uboot $@ ;;
+		uboot | u-boot | loader) build_uboot $@ ;;
 		uefi) build_uefi $@ ;;
 		*) usage ;;
 	esac
