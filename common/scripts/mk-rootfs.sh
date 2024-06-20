@@ -36,7 +36,6 @@ build_yocto()
 	"$RK_SCRIPTS_DIR/check-yocto.sh"
 
 	cd yocto
-	rm -f build/conf/local.conf
 
 	if [ "$RK_YOCTO_CFG_CUSTOM" ]; then
 		if [ -r "$RK_CHIP_DIR/$RK_YOCTO_CFG" ]; then
@@ -44,6 +43,7 @@ build_yocto()
 				build/conf/local.conf
 		elif [ -r "build/conf/$RK_YOCTO_CFG" ]; then
 			if [ "$RK_YOCTO_CFG" != local.conf ]; then
+				rm -f build/conf/local.conf
 				ln -sf "$RK_YOCTO_CFG" build/conf/local.conf
 			fi
 		else
@@ -55,6 +55,7 @@ build_yocto()
 		message "          Start building for $RK_YOCTO_CFG"
 		message "=========================================="
 	else
+		rm -f build/conf/local.conf
 		{
 			echo "include include/common.conf"
 			echo "include include/debug.conf"
@@ -92,8 +93,7 @@ build_yocto()
 		echo "include include/rksdk.conf"
 		echo
 
-		echo "PREFERRED_VERSION_linux-rockchip :=" \
-			"\"$RK_KERNEL_VERSION_RAW%\""
+		echo "PREFERRED_PROVIDER_virtual/kernel := \"linux-dummy\""
 		echo "LINUXLIBCVERSION := \"$RK_KERNEL_VERSION_RAW-custom%\""
 		echo "OLDEST_KERNEL := \"$RK_KERNEL_VERSION_RAW\""
 		case "$RK_CHIP_FAMILY" in
@@ -143,7 +143,14 @@ build_debian()
 			linaro-$RK_DEBIAN_VERSION-$ARCH.tar.gz
 	fi
 
-	VERSION=debug ARCH=$ARCH ./mk-rootfs-$RK_DEBIAN_VERSION.sh
+	DEBIAN_SCRIPT=mk-rootfs-$RK_DEBIAN_VERSION.sh
+
+	if [ "$RK_DEBIAN_MIRROR" ]; then
+		notice "Using mirror source $RK_DEBIAN_MIRROR in $DEBIAN_SCRIPT..."
+		sed -i "s#\(http://\)[^/]*#\1$RK_DEBIAN_MIRROR#" "$DEBIAN_SCRIPT"
+	fi
+
+	VERSION=debug ARCH=$ARCH ./$DEBIAN_SCRIPT
 	./mk-image.sh
 
 	if ! [ -r "$RK_LOG_DIR/post-rootfs.log" ]; then

@@ -15,19 +15,18 @@ build_wifibt()
 
 	RKWIFIBT_DIR="$RK_SDK_DIR/external/rkwifibt"
 
-	if [ "$RK_SUDO_ROOT" ]; then
-		# Check for dirty files owned by root
-		echo -e "\e[36m"
-		if find "$RKWIFIBT_DIR" -user 0 | grep ""; then
-			error "$RKWIFIBT_DIR is dirty for non-root building!"
-			error "Please clear it:"
-			error "cd $RKWIFIBT_DIR"
-			error "git add -f ."
-			error "sudo git reset --hard"
-			exit 1
-		fi
-		echo -e "\e[0m"
+	echo -e "\e[36m"
+	if find "$RKWIFIBT_DIR"/* -not -user $RK_OWNER_UID | grep ""; then
+		error "Found files owned by other users!"
+		error "$RKWIFIBT_DIR is dirty for building!"
+		error "Please clear it:"
+		error "cd $RKWIFIBT_DIR"
+		error "git add -f ."
+		error "sudo git reset --hard"
+		error "sudo chown -h -R $RK_OWNER:$RK_OWNER $RKWIFIBT_DIR/"
+		exit 1
 	fi
+	echo -e "\e[0m"
 
 	# Make sure that the kernel is ready
 	if [ ! -r kernel/include/generated/asm-offsets.h ]; then
@@ -266,7 +265,7 @@ build_wifibt()
 
 	echo "copy prebuilt tools/scripts to rootfs"
 	for b in brcm_patchram_plus1 dhd_priv rtk_hciattach; do
-		install -m 0755 "$RK_TOOL_DIR/armhf/$b" "$TARGET_DIR/usr/bin"
+		install -m 0755 "$RK_TOOLS_DIR/armhf/$b" "$TARGET_DIR/usr/bin"
 	done
 	install -m 0655 $RKWIFIBT_DIR/conf/* "$TARGET_DIR/etc/"
 	install -m 0755 $RKWIFIBT_DIR/bin/arm/* "$TARGET_DIR/usr/bin/"

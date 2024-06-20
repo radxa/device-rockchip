@@ -32,6 +32,12 @@ if [ -r "$TARGET_DIR/etc/ntp.conf" ] && \
 	echo "server 3.pool.ntp.org iburst" >> "$TARGET_DIR/etc/ntp.conf"
 fi
 
+# Switch from the compat to the files module
+# See: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=880846
+if [ -r "$TARGET_DIR/etc/nsswitch.conf" ]; then
+	sed -i 's/\<compat$/files/' "$TARGET_DIR/etc/nsswitch.conf"
+fi
+
 # Install weston overlays
 if [ -x "$TARGET_DIR/usr/bin/weston" ]; then
 	sed -i 's/\(WESTON_USER=\)weston/\1root/' \
@@ -50,9 +56,9 @@ fi
 # Install usbmount
 if [ "$RK_YOCTO_USBMOUNT" ]; then
 	mkdir -p "$TARGET_DIR/usr/bin/"
-	install -m 0755 "$RK_TOOL_DIR/armhf/lockfile-create" \
+	install -m 0755 "$RK_TOOLS_DIR/armhf/lockfile-create" \
 		"$TARGET_DIR/usr/bin/"
-	install -m 0755 "$RK_TOOL_DIR/armhf/lockfile-remove" \
+	install -m 0755 "$RK_TOOLS_DIR/armhf/lockfile-remove" \
 		"$TARGET_DIR/usr/bin/"
 
 	tar xvf "$OVERLAY_DIR/usbmount.tar" -C "$TARGET_DIR"

@@ -1,24 +1,26 @@
 #
 
-choice
-	prompt "USB gadget"
+menuconfig RK_USB_GADGET
+	bool "USB gadget"
+	default y
 
-config RK_USB_DEFAULT
-	bool "auto"
-	help
-	  Install USB gadget on non-buildroot OS.
+if RK_USB_GADGET
 
-config RK_USB_ENABLED
-	bool "install"
+config RK_USB_VID
+	hex "vendor id"
+	default 0x2207
 
-config RK_USB_DISABLED
-	bool "not install"
+config RK_USB_FW_VER
+	hex "firmware version"
+	default 0x0310
 
-endchoice # USB gadget
+config RK_USB_MANUFACTURER
+	string "manufacturer"
+	default "Rockchip"
 
-if !RK_USB_DISABLED
-
-menu "USB gadget configs"
+config RK_USB_PRODUCT
+	string "product"
+	default "rk3xxx"
 
 menuconfig RK_USB_ADBD
 	bool "Android Debug Bridge Daemon (adbd)"
@@ -30,9 +32,9 @@ config RK_USB_ADBD_TCP_PORT
 	int "TCP port"
 	default 5555
 
-config RK_USB_ADBD_BASH
-	bool "prefer using bash"
-	default y
+config RK_USB_ADBD_SHELL
+	string "login shell"
+	default "/bin/bash"
 
 menuconfig RK_USB_ADBD_SECURE
 	bool "access control"
@@ -52,8 +54,25 @@ endmenuconfig # secure
 endif # adbd
 endmenuconfig # adbd
 
-config RK_USB_MTP
+menuconfig RK_USB_MTP
 	bool "Media Transfer Protocal (MTP)"
+
+if RK_USB_MTP
+
+config RK_USB_MTP_ICON
+	string "device icon"
+	default "devicon.ico"
+	help
+	  Name of custom icon file under $RK_CHIP_DIR or USB gadget overlay dir.
+
+config RK_USB_MTP_CONF
+	string "umtprd config file"
+	default "umtprd.conf"
+	help
+	  Name of config file under $RK_CHIP_DIR or USB gadget overlay dir.
+
+endif # MTP
+endmenuconfig # MTP
 
 config RK_USB_ACM
 	bool "Abstract Control Model (ACM)"
@@ -65,10 +84,10 @@ config RK_USB_UVC
 	bool "USB Video Class (UVC)"
 
 config RK_USB_UAC1
-	bool "USB Audio Class (UAC1)"
+	bool "USB Audio Class 1.0 (UAC1)"
 
 config RK_USB_UAC2
-	bool "USB Audio Class (UAC2)"
+	bool "USB Audio Class 2.0 (UAC2)"
 
 config RK_USB_HID
 	bool "Human Interface Devices (HID)"
@@ -117,12 +136,26 @@ config RK_USB_UMS_RO
 endif # UMS
 endmenuconfig # UMS
 
+config RK_USB_ECM
+	bool "Ethernet Control Model (ECM)"
+
+config RK_USB_EEM
+	bool "Ethernet Emulation Model (EEM)"
+
+config RK_USB_NCM
+	bool "Network Control Model (NCM)"
+
+config RK_USB_MIDI
+	bool "Musical Instrument Digital Interface (MIDI)"
+
+config RK_USB_SERIAL
+	bool "USB Gadget Serial (GSER)"
+
 config RK_USB_EXTRA
 	string "extra USB gadget configs"
 
 config RK_USB_HOOKS
 	string "hook scripts"
 
-endmenu # USB gadget
-
-endif # !USB gadget disabled
+endif # USB gadget
+endmenuconfig # USB gadget
