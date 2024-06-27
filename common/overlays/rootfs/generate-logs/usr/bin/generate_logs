@@ -1,7 +1,7 @@
 #!/bin/sh
 
 LOG_DIR=$(mktemp -dt log.XXXXXX)
-LOG_TARBALL=/tmp/log-$(date +%m%d%y-%H%M%S).tar.gz
+LOG_TARBALL=/tmp/log-$(date +%m%d%y-%H%M%S).tar
 
 cd "$LOG_DIR"
 
@@ -14,10 +14,12 @@ ln -sf /var/log .
 dmesg -c > dmesg.txt
 
 if [ -w /proc/sysrq-trigger ]; then
+	echo 0 > /proc/sys/kernel/printk
 	for s in l m q t w; do
 		echo $s > /proc/sysrq-trigger
 	done
 	dmesg > sysrq.txt
+	echo 7 > /proc/sys/kernel/printk
 fi
 
 if type lsof >/dev/null 2>/dev/null; then
@@ -36,9 +38,11 @@ if [ -d /etc/generate_logs.d ]; then
 	done
 fi
 
-tar czhf "$LOG_TARBALL" .
+# Avoid packing DRM crc
+tar chf "$LOG_TARBALL" --exclude "*/crc" .
+gzip "$LOG_TARBALL"
 
 cd /
 rm -rf "$LOG_DIR"
 
-echo "Log files zipped to $LOG_TARBALL"
+echo "Log files zipped to $LOG_TARBALL.gz"

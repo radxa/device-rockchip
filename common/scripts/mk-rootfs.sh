@@ -15,10 +15,15 @@ build_buildroot()
 
 	"$RK_SCRIPTS_DIR/mk-buildroot.sh" $RK_BUILDROOT_CFG "$IMAGE_DIR"
 
+	if [ -r "$RK_LOG_DIR/post-rootfs.log" ]; then
+		cat "$RK_LOG_DIR/post-rootfs.log"
+	else
+		warning "Building without post-rootfs stage!"
+	fi
+
 	[ -z "$RK_SECURITY" ] || "$RK_SCRIPTS_DIR/mk-security.sh" system \
 		$RK_SECURITY_CHECK_METHOD $IMAGE_DIR/rootfs.$RK_ROOTFS_TYPE
 
-	cat "$RK_LOG_DIR/post-rootfs.log"
 	finish_build build_buildroot $@
 }
 
@@ -31,22 +36,26 @@ build_yocto()
 	"$RK_SCRIPTS_DIR/check-yocto.sh"
 
 	cd yocto
-	rm -f build/conf/local.conf
 
 	if [ "$RK_YOCTO_CFG_CUSTOM" ]; then
-		if [ ! -r "build/conf/$RK_YOCTO_CFG" ]; then
+		if [ -r "$RK_CHIP_DIR/$RK_YOCTO_CFG" ]; then
+			ln -rsf "$RK_CHIP_DIR/$RK_YOCTO_CFG" \
+				build/conf/local.conf
+		elif [ -r "build/conf/$RK_YOCTO_CFG" ]; then
+			if [ "$RK_YOCTO_CFG" != local.conf ]; then
+				rm -f build/conf/local.conf
+				ln -sf "$RK_YOCTO_CFG" build/conf/local.conf
+			fi
+		else
 			error "yocto/build/conf/$RK_YOCTO_CFG not exist!"
 			return 1
-		fi
-
-		if [ "$RK_YOCTO_CFG" != local.conf ]; then
-			ln -sf "$RK_YOCTO_CFG" build/conf/local.conf
 		fi
 
 		message "=========================================="
 		message "          Start building for $RK_YOCTO_CFG"
 		message "=========================================="
 	else
+		rm -f build/conf/local.conf
 		{
 			echo "include include/common.conf"
 			echo "include include/debug.conf"
@@ -54,7 +63,7 @@ build_yocto()
 			echo "include include/multimedia.conf"
 			echo "include include/audio.conf"
 
-			if [ "$RK_WIFIBT_CHIP" ]; then
+			if [ "$RK_WIFIBT" ]; then
 				echo "include include/wifibt.conf"
 			fi
 
@@ -74,32 +83,42 @@ build_yocto()
 		message "=========================================="
 	fi
 
+	if [ "$RK_YOCTO_EXTRA_CFG" ]; then
+		message "=========================================="
+		message "          With extra config:($RK_YOCTO_EXTRA_CFG)"
+		message "=========================================="
+	fi
+
 	{
 		echo "include include/rksdk.conf"
 		echo
 
-		if [ "$RK_CHIP" = "rk3288w" ]; then
-			echo "MACHINE_FEATURES:append = \" rk3288w\""
-		fi
-
-		echo "PREFERRED_VERSION_linux-rockchip :=" \
-			"\"$RK_KERNEL_VERSION_REAL%\""
-		echo "LINUXLIBCVERSION := \"$RK_KERNEL_VERSION_REAL-custom%\""
+		echo "PREFERRED_PROVIDER_virtual/kernel := \"linux-dummy\""
+		echo "LINUXLIBCVERSION := \"$RK_KERNEL_VERSION_RAW-custom%\""
+		echo "OLDEST_KERNEL := \"$RK_KERNEL_VERSION_RAW\""
 		case "$RK_CHIP_FAMILY" in
-			px30|rk3326|rk3562|rk3566_rk3568|rk3588)
+			px30|rk3326|rk3562|rk3566_rk3568|rk3576|rk3588)
 				echo "MALI_VERSION := \"g13p0\"" ;;
 		esac
 	} > build/conf/rksdk_override.conf
 
 	source oe-init-build-env build
+
+	set -x
 	LANG=en_US.UTF-8 LANGUAGE=en_US.en LC_ALL=en_US.UTF-8 \
 		bitbake core-image-minimal -C rootfs \
-		-R conf/rksdk_override.conf
+		-R conf/rksdk_override.conf \
+		${RK_YOCTO_EXTRA_CFG:+-R $RK_CHIP_DIR/$RK_YOCTO_EXTRA_CFG}
+	set x
 
 	ln -rsf "$PWD/latest/rootfs.img" "$IMAGE_DIR/rootfs.ext4"
 
-	touch "$RK_LOG_DIR/post-rootfs.log"
-	cat "$RK_LOG_DIR/post-rootfs.log"
+	if [ -r "$RK_LOG_DIR/post-rootfs.log" ]; then
+		cat "$RK_LOG_DIR/post-rootfs.log"
+	else
+		warning "Building without post-rootfs stage!"
+	fi
+
 	finish_build build_yocto $@
 }
 
@@ -124,8 +143,19 @@ build_debian()
 			linaro-$RK_DEBIAN_VERSION-$ARCH.tar.gz
 	fi
 
-	VERSION=debug ARCH=$ARCH ./mk-rootfs-$RK_DEBIAN_VERSION.sh
+	DEBIAN_SCRIPT=mk-rootfs-$RK_DEBIAN_VERSION.sh
+
+	if [ "$RK_DEBIAN_MIRROR" ]; then
+		notice "Using mirror source $RK_DEBIAN_MIRROR in $DEBIAN_SCRIPT..."
+		sed -i "s#\(http://\)[^/]*#\1$RK_DEBIAN_MIRROR#" "$DEBIAN_SCRIPT"
+	fi
+
+	VERSION=debug ARCH=$ARCH ./$DEBIAN_SCRIPT
 	./mk-image.sh
+
+	if ! [ -r "$RK_LOG_DIR/post-rootfs.log" ]; then
+		warning "Building without post-rootfs stage!"
+	fi
 
 	ln -rsf "$PWD/linaro-rootfs.img" "$IMAGE_DIR/rootfs.ext4"
 
@@ -218,7 +248,7 @@ pre_build_hook()
 			unset BUILDROOT_OUTPUT_DIR
 			make -C "$RK_SDK_DIR/buildroot" O="$TEMP_DIR" \
 				"${BUILDROOT_BOARD}_defconfig" menuconfig
-			"$RK_SDK_DIR/buildroot/build/update_defconfig.sh" \
+			"$RK_SDK_DIR/buildroot/scripts/update_defconfig.sh" \
 				"$BUILDROOT_BOARD" "$TEMP_DIR"
 			rm -rf "$TEMP_DIR"
 
