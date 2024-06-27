@@ -2,6 +2,11 @@
 
 menu "Others configurations"
 
+config RK_OVERLAY
+	bool "overlays for rootfs, recovery, etc."
+	depends on RK_KERNEL
+	default y
+
 choice
 	prompt "patches saving"
 	default RK_SAVE_TRACKED
@@ -15,6 +20,6 @@ config RK_SAVE_TRACKED
 config RK_SAVE_ALL
 	bool "save all changes"
 
-endchoice
+endchoice # patches saving
 
 endmenu # Others

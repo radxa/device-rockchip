@@ -7,12 +7,12 @@ config RK_DEFCONFIG_FROM_ENV
 	option env="RK_DEFCONFIG"
 
 config RK_DEFCONFIG
-	string "Location to save defconfig"
+	string "Name of defconfig to save"
 	default RK_DEFCONFIG_FROM_ENV if RK_DEFCONFIG_FROM_ENV != ""
-	default "defconfig"
+	default "rockchip_defconfig"
 	help
 	  When running 'make savedefconfig', the defconfig file will be
-	  saved in this location.
+	  saved under this name.
 
 config RK_CHIP_FAMILY_FROM_ENV
 	string
@@ -46,13 +46,12 @@ config RK_CHIP_ARM32
 
 source "Config.in.rootfs"
 source "Config.in.loader"
-source "Config.in.rtos"
+source "Config.in.amp"
 source "Config.in.kernel"
 source "Config.in.boot"
 source "Config.in.recovery"
-source "Config.in.pcba"
 source "Config.in.security"
-source "Config.in.extra-part"
+source "Config.in.extra-parts"
 source "Config.in.firmware"
 source "Config.in.update"
 source "Config.in.others"

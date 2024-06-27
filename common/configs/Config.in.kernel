@@ -3,35 +3,15 @@
 comment "Linux kernel depends on loader"
 	depends on !RK_LOADER
 
-if RK_LOADER
-
-menu "Kernel"
-
-config RK_KERNEL
-	bool "kernel"
+menuconfig RK_KERNEL
+	bool "Kernel (Embedded in an Android-style boot image)"
+	depends on RK_LOADER
 	default y
 
 if RK_KERNEL
 
-config RK_KERNEL_CFG
-	string "kernel defconfig"
-	default "px30_linux_defconfig" if RK_CHIP = "px30" || \
-		RK_CHIP = "rk3326" || RK_CHIP_FAMILY = "rk3358"
-	default "rv1126_defconfig" if RK_CHIP_FAMILY = "rv1126_rv1109"
-	default "rk1806_linux_defconfig" if RK_CHIP = "rk1806"
-	default "rk1808_linux_defconfig" if RK_CHIP = "rk1808"
-	default "rk3308_linux_defconfig" if RK_CHIP_FAMILY = "rk3308"
-	default "rockchip_linux_defconfig"
-
-if RK_RECOVERY
-
-config RK_KERNEL_RECOVERY_CFG
-	string "kernel defconfig for recovery"
-
-endif
-
-config RK_KERNEL_VERSION
-	string "kernel version, e.g. 5.10"
+config RK_KERNEL_PREFERRED
+	string "preferred version, e.g. 5.10"
 
 config RK_KERNEL_ARCH
 	string
@@ -39,7 +19,7 @@ config RK_KERNEL_ARCH
 	default "arm64" if RK_KERNEL_ARM64
 
 choice
-	prompt "kernel arch"
+	prompt "arch"
 
 config RK_KERNEL_ARM64
 	bool "arm64"
@@ -48,18 +28,23 @@ config RK_KERNEL_ARM64
 config RK_KERNEL_ARM32
 	bool "arm"
 
-endchoice
+endchoice # arch
+
+config RK_KERNEL_CFG
+	string "defconfig"
+	default "px30_linux_defconfig" if RK_CHIP = "px30" || \
+		RK_CHIP = "rk3326" || RK_CHIP_FAMILY = "rk3358"
+	default "rv1126_defconfig" if RK_CHIP_FAMILY = "rv1126_rv1109"
+	default "rk1806_linux_defconfig" if RK_CHIP = "rk1806"
+	default "rk1808_linux_defconfig" if RK_CHIP = "rk1808"
+	default "rk3308_linux_defconfig" if RK_CHIP_FAMILY = "rk3308"
+	default "rockchip_linux_defconfig"
 
 config RK_KERNEL_CFG_FRAGMENTS
-	string "kernel defconfig fragments"
-	default "rk3126_linux.config" if RK_CHIP = "rk3126c"
-	default "rk3128_linux.config" if RK_CHIP = "rk3128"
-	default "rk3326_linux.config" if RK_CHIP = "rk3326"
-	default "rk3358_linux.config" if RK_CHIP_FAMILY = "rk3358"
-	default "rk3588_linux.config" if RK_CHIP_FAMILY = "rk3588"
+	string "defconfig fragments"
 
 config RK_KERNEL_DTS_NAME
-	string "kernel device-tree name"
+	string "device-tree script name"
 
 config RK_KERNEL_DTS_DIR
 	string
@@ -75,7 +60,7 @@ config RK_KERNEL_DTB
 	default "$RK_KERNEL_DTS_DIR/$RK_KERNEL_DTS_NAME.dtb"
 
 config RK_KERNEL_IMG_NAME
-	string "kernel image name"
+	string "raw image"
 	default "zImage" if RK_KERNEL_ARM32 && RK_BOOT_COMPRESSED
 	default "Image.lz4" if RK_KERNEL_ARM64 && RK_BOOT_COMPRESSED
 	default "Image"
@@ -84,29 +69,21 @@ config RK_KERNEL_IMG
 	string
 	default "kernel/arch/$RK_KERNEL_ARCH/boot/$RK_KERNEL_IMG_NAME"
 
-config RK_KERNEL_KBUILD_ARCH
-	string
-	default "host" if RK_KERNEL_KBUILD_HOST
-	default "armhf" if RK_KERNEL_KBUILD_ARM32
-	default "aarch64" if RK_KERNEL_KBUILD_ARM64
+if RK_RECOVERY
 
-choice
-	prompt "kbuild tools arch"
+config RK_KERNEL_RECOVERY_CFG
+	string "defconfig for recovery"
 
-config RK_KERNEL_KBUILD_HOST
-	bool "host arch"
+config RK_KERNEL_RECOVERY_DTS_NAME
+	string "device-tree script name for recovery"
 
-config RK_KERNEL_KBUILD_ARM64
-	bool "aarch64"
-	depends on !RK_CHIP_ARM32
+config RK_KERNEL_RECOVERY_LOGO
+	string "loader logo name for recovery"
 
-config RK_KERNEL_KBUILD_ARM32
-	bool "armhf"
+config RK_KERNEL_RECOVERY_LOGO_KERNEL
+	string "kernel logo name for recovery"
 
-endchoice
+endif # RK_RECOVERY
 
-endif
-
-endmenu # Kernel
-
-endif
+endif # Kernel
+endmenuconfig # Kernel

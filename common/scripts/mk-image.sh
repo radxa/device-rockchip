@@ -4,7 +4,7 @@
 if [ -n "$RK_BUILDROOT_CFG" ]; then
     HOST_DIR="$RK_SDK_DIR/buildroot/output/$RK_BUILDROOT_CFG/host"
     export PATH=$HOST_DIR/usr/sbin:$HOST_DIR/usr/bin:$HOST_DIR/sbin:$HOST_DIR/bin:$PATH
-    echo "Using host tools in $HOST_DIR"
+    echo "Using host tools in $HOST_DIR (except for mke2fs)"
 else
     "$(dirname "$(realpath "$0")")/check-mkimage.sh"
 fi
@@ -17,17 +17,51 @@ fatal()
 
 usage()
 {
-    echo $@
-    fatal "Usage: $0 <src_dir> <target_image> <fs_type> <size(M|K)|auto(0)> [label]"
+    echo ${@:-"Wrong argumants"}
+    echo "Usage: $0 [options] <source directory> <dest image>"
+    echo "Options:"
+    echo "-t, --type <type>    Filesystem type <ext4|msdos|...> (default is: ext4)"
+    echo "-s, --size <size>    Filesystem size <size(M|K)|auto> (default is: auto)"
+    echo "-l, --label <label>  Filesystem label"
+    exit 1
 }
 
-[ ! $# -lt 3 ] || usage "Not enough args${@+: $0 $@}"
+unset SRC_DIR TARGET FS_TYPE SIZE LABEL
+while true; do
+    case "$1" in
+        "")
+            [ "$SRC_DIR" ] || usage "No source directory"
+            [ "$TARGET" ] || usage "No target image"
+            break
+            ;;
+        -t|--type)
+            FS_TYPE=$2
+            shift 2 || usage
+            ;;
+        -s|--size)
+            SIZE=$2
+            shift 2 || usage
+            ;;
+        -l|--label)
+            LABEL=$2
+            shift 2 || usage
+            ;;
+        *)
+            if [ -z "$SRC_DIR" ]; then
+                SRC_DIR=$1
+                shift
+            elif [ -z "$TARGET" ]; then
+                TARGET=$1
+                shift
+            else
+                usage
+            fi
+            ;;
+    esac
+done
 
-export SRC_DIR=$1
-export TARGET=$2
-FS_TYPE=$3
-SIZE=${4:-0}
-LABEL=$5
+[ "$FS_TYPE" ] || FS_TYPE=ext4
+[ "$SIZE" ] || SIZE=auto
 
 case $SIZE in
     auto)
@@ -96,35 +130,40 @@ mkimage()
 
     case $FS_TYPE in
         ext[234])
-            if mke2fs -h 2>&1 | grep -wq "\-d"; then
-                mke2fs -t $FS_TYPE $TARGET -d $SRC_DIR ${SIZE_KB}K \
-                    || return 1
-            else
-                echo "Detected old mke2fs(doesn't support '-d' option)!"
-                mke2fs -t $FS_TYPE $TARGET ${SIZE_KB}K || return 1
-                copy_to_image || return 1
-            fi
+            /sbin/mke2fs -t $FS_TYPE $TARGET -d $SRC_DIR -b 4096 ${SIZE_KB}K \
+                ${LABEL:+-L $LABEL} || return 1
+
             # Set max-mount-counts to 0, and disable the time-dependent checking.
-            tune2fs -c 0 -i 0 $TARGET ${LABEL:+-L $LABEL}
+            tune2fs -c 0 -i 0 $TARGET
             ;;
         msdos|fat|vfat)
             truncate -s ${SIZE_KB}K $TARGET
 
             # Use fat32 by default
-            mkfs.vfat -F 32 $TARGET ${LABEL:+-n $LABEL} && \
-                MTOOLS_SKIP_CHECK=1 \
+            mkfs.vfat -F 32 ${LABEL:+-n $LABEL} $TARGET && MTOOLS_SKIP_CHECK=1 \
                 mcopy -bspmn -D s -i $TARGET $SRC_DIR/* ::/
             ;;
         ntfs)
             truncate -s ${SIZE_KB}K $TARGET
 
             # Enable compression
-            mkntfs -FCQ $TARGET ${LABEL:+-L $LABEL}
+            mkntfs -FCQ ${LABEL:+-L $LABEL} $TARGET
             if check_host_tool ntfscp; then
                 copy_to_ntfs
             else
                 copy_to_image
             fi
+            ;;
+        btrfs)
+            truncate -s ${SIZE_KB}K $TARGET
+
+            mkfs.btrfs ${LABEL:+-L $LABEL} -r $SRC_DIR $TARGET
+            ;;
+        f2fs)
+            truncate -s ${SIZE_KB}K $TARGET
+
+            mkfs.f2fs ${LABEL:+-l $LABEL} $TARGET
+            sload.f2fs -f $SRC_DIR $TARGET
             ;;
         ubi|ubifs) mk_ubi_image ;;
     esac
@@ -132,22 +171,25 @@ mkimage()
 
 mkimage_auto_sized()
 {
-    tar cf $TEMP $SRC_DIR &>/dev/null
-    SIZE_KB=$(du -k $TEMP|grep -o "^[0-9]*")
-    rm -rf $TEMP
     echo "Making $TARGET from $SRC_DIR (auto sized)"
 
-    MAX_RETRY=10
+    # Apparent size and maxium alignment(file_count * block_size)
+    SIZE_KB="$(($(du --apparent-size -sk $SRC_DIR | cut -f 1) + \
+        $(find $SRC_DIR | wc -l) * 4))"
+    SIZE_KB="$((SIZE_KB + $SIZE_KB * 10 / 100))" # Start with extra 10%
+    MAX_RETRY=20
     RETRY=0
 
     while true;do
-        EXTRA_SIZE=$(($SIZE_KB / 50))
-        SIZE_KB=$(($SIZE_KB + ($EXTRA_SIZE > 4096 ? $EXTRA_SIZE : 4096)))
         mkimage && break
 
         RETRY=$[RETRY+1]
         [ $RETRY -gt $MAX_RETRY ] && fatal "Failed to make image!"
+
         echo "Retring with increased size....($RETRY/$MAX_RETRY)"
+
+        EXTRA_SIZE=$(($SIZE_KB / 50)) # Retry with extra 2%
+        SIZE_KB=$(($SIZE_KB + ($EXTRA_SIZE > 4096 ? $EXTRA_SIZE : 4096)))
     done
 }
 
@@ -185,22 +227,30 @@ mk_ubi_image()
 
 rm -rf $TARGET
 case $FS_TYPE in
-    ext[234]|msdos|fat|vfat|ntfs|ubi|ubifs)
+    ext[234]|msdos|fat|vfat|ntfs|btrfs|f2fs|ubi|ubifs)
         if [ $SIZE_KB -eq 0 ]; then
-            mkimage_auto_sized
+            mkimage_auto_sized || exit 1
         else
-            mkimage && echo "Generated $TARGET"
+            mkimage || exit 1
         fi
+        ;;
+    erofs)
+        [ $SIZE_KB -eq 0 ] || fatal "$FS_TYPE: fixed size not supported."
+        mkfs.erofs -zlz4hc $TARGET $SRC_DIR|| exit 1
         ;;
     squashfs)
         [ $SIZE_KB -eq 0 ] || fatal "$FS_TYPE: fixed size not supported."
-        mksquashfs $SRC_DIR $TARGET -noappend -comp lz4
+        mksquashfs $SRC_DIR $TARGET -noappend -comp lz4 || exit 1
         ;;
     jffs2)
         [ $SIZE_KB -eq 0 ] || fatal "$FS_TYPE: fixed size not supported."
-        mkfs.jffs2 -r $SRC_DIR -o $TARGET 0x10000 --pad=0x400000 -s 0x1000 -n
+        mkfs.jffs2 -r $SRC_DIR -o $TARGET 0x10000 \
+            --pad=0x400000 -s 0x1000 -n || exit 1
         ;;
     *)
         usage "File system: $FS_TYPE not supported."
+        exit 1
         ;;
 esac
+
+echo "Generated $TARGET"

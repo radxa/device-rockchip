@@ -6,28 +6,27 @@ source "${RK_POST_HELPER:-$(dirname "$(realpath "$0")")/../post-hooks/post-helpe
 
 build_wifibt()
 {
-	check_config RK_KERNEL RK_WIFIBT_CHIP || return 0
+	check_config RK_KERNEL RK_WIFIBT RK_WIFIBT_MODULES || return 0
 	source "$RK_SCRIPTS_DIR/kernel-helper"
 
 	message "=========================================="
-	message "          Start building wifi/BT ($RK_WIFIBT_CHIP)"
+	message "          Start building wifi/BT ($RK_WIFIBT_MODULES)"
 	message "=========================================="
 
 	RKWIFIBT_DIR="$RK_SDK_DIR/external/rkwifibt"
 
-	if [ "$RK_SUDO_ROOT" ]; then
-		# Check for dirty files owned by root
-		echo -e "\e[36m"
-		if find "$RKWIFIBT_DIR" -user 0 | grep ""; then
-			error "$RKWIFIBT_DIR is dirty for non-root building!"
-			error "Please clear it:"
-			error "cd $RKWIFIBT_DIR"
-			error "git add -f ."
-			error "sudo git reset --hard"
-			exit 1
-		fi
-		echo -e "\e[0m"
+	echo -e "\e[36m"
+	if find "$RKWIFIBT_DIR"/* -not -user $RK_OWNER_UID | grep ""; then
+		error "Found files owned by other users!"
+		error "$RKWIFIBT_DIR is dirty for building!"
+		error "Please clear it:"
+		error "cd $RKWIFIBT_DIR"
+		error "git add -f ."
+		error "sudo git reset --hard"
+		error "sudo chown -h -R $RK_OWNER:$RK_OWNER $RKWIFIBT_DIR/"
+		exit 1
 	fi
+	echo -e "\e[0m"
 
 	# Make sure that the kernel is ready
 	if [ ! -r kernel/include/generated/asm-offsets.h ]; then
@@ -46,7 +45,7 @@ build_wifibt()
 	if [ -z "WIFI_RFKILL" ]; then
 		echo "=== WARNNING CONFIG_USB not set !!! ==="
 	fi
-	if [[ "$RK_WIFIBT_CHIP" =~ "U" ]];then
+	if [[ "$RK_WIFIBT_MODULES" =~ "U" ]];then
 		if [ -z "$WIFI_USB" ]; then
 			echo "=== WARNNING CONFIG_USB not set so ABORT!!! ==="
 			exit 0
@@ -54,7 +53,7 @@ build_wifibt()
 	fi
 	echo "kernel config: $WIFI_USB $WIFI_SDIO $WIFI_RFKILL"
 
-	if [[ "$RK_WIFIBT_CHIP" =~ "ALL_AP" ]];then
+	if [[ "$RK_WIFIBT_MODULES" =~ "ALL_AP" ]];then
 		echo "building bcmdhd sdio"
 		$KMAKE M=$RKWIFIBT_DIR/drivers/bcmdhd CONFIG_BCMDHD=m \
 			CONFIG_BCMDHD_SDIO=y CONFIG_BCMDHD_PCIE=
@@ -64,7 +63,7 @@ build_wifibt()
 				CONFIG_BCMDHD_PCIE=y CONFIG_BCMDHD_SDIO=
 		fi
 
-		if ! [[ "$RK_KERNEL_VERSION" = "6.1" ]];then
+		if ! [[ "$RK_KERNEL_VERSION_RAW" = "6.1" ]];then
 			if [ -n "$WIFI_USB" ]; then
 				echo "building rtl8188fu usb"
 				$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8188fu modules
@@ -88,7 +87,7 @@ build_wifibt()
 		fi
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" =~ "ALL_CY" ]];then
+	if [[ "$RK_WIFIBT_MODULES" =~ "ALL_CY" ]];then
 		echo "building CYW4354"
 		ln -sf chips/CYW4354_Makefile \
 			$RKWIFIBT_DIR/drivers/infineon/Makefile
@@ -124,7 +123,7 @@ build_wifibt()
 			$RKWIFIBT_DIR/drivers/infineon/Makefile
 		$KMAKE M=$RKWIFIBT_DIR/drivers/infineon
 
-		if ! [[ "$RK_KERNEL_VERSION" = "6.1" ]];then
+		if ! [[ "$RK_KERNEL_VERSION_RAW" = "6.1" ]];then
 			if [ -n "$WIFI_USB" ]; then
 				echo "building rtl8188fu usb"
 				$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8188fu modules
@@ -148,8 +147,8 @@ build_wifibt()
 		fi
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" =~ "AP6" ]];then
-		if [[ "$RK_WIFIBT_CHIP" = "AP6275_PCIE" ]];then
+	if [[ "$RK_WIFIBT_MODULES" =~ "AP6" ]];then
+		if [[ "$RK_WIFIBT_MODULES" = "AP6275_PCIE" ]];then
 			echo "building bcmdhd pcie driver"
 			$KMAKE M=$RKWIFIBT_DIR/drivers/bcmdhd CONFIG_BCMDHD=m \
 				CONFIG_BCMDHD_PCIE=y CONFIG_BCMDHD_SDIO=
@@ -160,93 +159,93 @@ build_wifibt()
 		fi
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "CYW4354" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "CYW4354" ]];then
 		echo "building CYW4354"
 		ln -sf chips/CYW4354_Makefile \
 			$RKWIFIBT_DIR/drivers/infineon/Makefile
 		$KMAKE M=$RKWIFIBT_DIR/drivers/infineon
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "CYW4373" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "CYW4373" ]];then
 		echo "building CYW4373"
 		ln -sf chips/CYW4373_Makefile \
 			$RKWIFIBT_DIR/drivers/infineon/Makefile
 		$KMAKE M=$RKWIFIBT_DIR/drivers/infineon
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "CYW43438" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "CYW43438" ]];then
 		echo "building CYW43438"
 		ln -sf chips/CYW43438_Makefile \
 			$RKWIFIBT_DIR/drivers/infineon/Makefile
 		$KMAKE M=$RKWIFIBT_DIR/drivers/infineon
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "CYW43455" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "CYW43455" ]];then
 		echo "building CYW43455"
 		ln -sf chips/CYW43455_Makefile \
 			$RKWIFIBT_DIR/drivers/infineon/Makefile
 		$KMAKE M=$RKWIFIBT_DIR/drivers/infineon
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "CYW5557X" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "CYW5557X" ]];then
 		echo "building CYW5557X"
 		ln -sf chips/CYW5557X_Makefile \
 			$RKWIFIBT_DIR/drivers/infineon/Makefile
 		$KMAKE M=$RKWIFIBT_DIR/drivers/infineon
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "CYW5557X_PCIE" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "CYW5557X_PCIE" ]];then
 		echo "building CYW5557X_PCIE"
 		ln -sf chips/CYW5557X_PCIE_Makefile \
 			$RKWIFIBT_DIR/drivers/infineon/Makefile
 		$KMAKE M=$RKWIFIBT_DIR/drivers/infineon
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "CYW54591" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "CYW54591" ]];then
 		echo "building CYW54591"
 		ln -sf chips/CYW54591_Makefile \
 			$RKWIFIBT_DIR/drivers/infineon/Makefile
 		$KMAKE M=$RKWIFIBT_DIR/drivers/infineon
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "CYW54591_PCIE" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "CYW54591_PCIE" ]];then
 		echo "building CYW54591_PCIE"
 		ln -sf chips/CYW54591_PCIE_Makefile \
 			$RKWIFIBT_DIR/drivers/infineon/Makefile
 		$KMAKE M=$RKWIFIBT_DIR/drivers/infineon
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "RTL8188FU" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "RTL8188FU" ]];then
 		echo "building rtl8188fu driver"
 		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8188fu modules
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "RTL8189FS" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "RTL8189FS" ]];then
 		echo "building rtl8189fs driver"
 		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8189fs modules
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "RTL8723DS" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "RTL8723DS" ]];then
 		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8723ds modules
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "RTL8821CS" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "RTL8821CS" ]];then
 		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8821cs modules
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "RTL8822CS" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "RTL8822CS" ]];then
 		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8822cs modules
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "RTL8852BS" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "RTL8852BS" ]];then
 		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8852bs modules
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "RTL8852BE" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "RTL8852BE" ]];then
 		$KMAKE M=$RKWIFIBT_DIR/drivers/rtl8852be modules
 	fi
 
-	if ! [[ "$RK_KERNEL_VERSION" = "6.1" ]];then
+	if ! [[ "$RK_KERNEL_VERSION_RAW" = "6.1" ]];then
 		echo "building realtek bt drivers"
 		$KMAKE M=$RKWIFIBT_DIR/drivers/bluetooth_uart_driver
 		if [ -n "$WIFI_USB" ]; then
@@ -257,7 +256,7 @@ build_wifibt()
 	mkdir -p $TARGET_DIR/etc/ $TARGET_DIR/usr/bin/ \
 		$TARGET_DIR/lib/modules/ $TARGET_DIR/lib/firmware/rtlbt/
 
-	echo "create Android stype dirs"
+	echo "create Android style dirs"
 	rm -rf "$TARGET_DIR/system"
 	rm -rf "$TARGET_DIR/vendor"
 	mkdir -p "$TARGET_DIR/system/etc"
@@ -266,17 +265,18 @@ build_wifibt()
 
 	echo "copy prebuilt tools/scripts to rootfs"
 	for b in brcm_patchram_plus1 dhd_priv rtk_hciattach; do
-		install -m 0755 "$RK_TOOL_DIR/armhf/$b" "$TARGET_DIR/usr/bin"
+		install -m 0755 "$RK_TOOLS_DIR/armhf/$b" "$TARGET_DIR/usr/bin"
 	done
 	install -m 0655 $RKWIFIBT_DIR/conf/* "$TARGET_DIR/etc/"
 	install -m 0755 $RKWIFIBT_DIR/bin/arm/* "$TARGET_DIR/usr/bin/"
 	install -m 0755 $RKWIFIBT_DIR/scripts/* "$TARGET_DIR/usr/bin/"
+	rm -f "$TARGET_DIR/usr/bin/wifibt-sleep-hook.sh"
 	for b in bt-tty wifibt-info wifibt-vendor wifibt-id wifibt-bus \
 		wifibt-chip wifibt-module; do
 		ln -sf wifibt-util.sh "$TARGET_DIR/usr/bin/$b"
 	done
 
-	if [[ "$RK_WIFIBT_CHIP" = "ALL_CY" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "ALL_CY" ]];then
 		echo "copy infineon/realtek firmware/nvram to rootfs"
 		cp $RKWIFIBT_DIR/drivers/infineon/*.ko \
 			$TARGET_DIR/lib/modules/ || true
@@ -284,7 +284,7 @@ build_wifibt()
 			$TARGET_DIR/lib/firmware/ || true
 
 		#reatek
-		if ! [[ "$RK_KERNEL_VERSION" = "6.1" ]];then
+		if ! [[ "$RK_KERNEL_VERSION_RAW" = "6.1" ]];then
 			cp $RKWIFIBT_DIR/firmware/realtek/*/* $TARGET_DIR/lib/firmware/
 			cp $RKWIFIBT_DIR/firmware/realtek/*/* \
 				$TARGET_DIR/lib/firmware/rtlbt/
@@ -297,7 +297,7 @@ build_wifibt()
 		fi
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" = "ALL_AP" ]];then
+	if [[ "$RK_WIFIBT_MODULES" = "ALL_AP" ]];then
 		echo "copy ap6xxx firmware/nvram to rootfs"
 		cp $RKWIFIBT_DIR/drivers/bcmdhd/*.ko $TARGET_DIR/lib/modules/
 		cp $RKWIFIBT_DIR/firmware/broadcom/*/wifi/* \
@@ -306,7 +306,7 @@ build_wifibt()
 			$TARGET_DIR/lib/firmware/ || true
 
 		#reatek
-		if ! [[ "$RK_KERNEL_VERSION" = "6.1" ]];then
+		if ! [[ "$RK_KERNEL_VERSION_RAW" = "6.1" ]];then
 			echo "copy realtek firmware/nvram to rootfs"
 			cp $RKWIFIBT_DIR/drivers/rtl*/*.ko $TARGET_DIR/lib/modules/
 			cp -rf $RKWIFIBT_DIR/firmware/realtek/*/* $TARGET_DIR/lib/firmware/
@@ -321,36 +321,36 @@ build_wifibt()
 		fi
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" =~ "RTL" ]];then
+	if [[ "$RK_WIFIBT_MODULES" =~ "RTL" ]];then
 		echo "Copy RTL file to rootfs"
-		if [ -d "$RKWIFIBT_DIR/firmware/realtek/$RK_WIFIBT_CHIP" ]; then
-			cp $RKWIFIBT_DIR/firmware/realtek/$RK_WIFIBT_CHIP/* \
+		if [ -d "$RKWIFIBT_DIR/firmware/realtek/$RK_WIFIBT_MODULES" ]; then
+			cp $RKWIFIBT_DIR/firmware/realtek/$RK_WIFIBT_MODULES/* \
 				$TARGET_DIR/lib/firmware/rtlbt/
-			cp $RKWIFIBT_DIR/firmware/realtek/$RK_WIFIBT_CHIP/* \
+			cp $RKWIFIBT_DIR/firmware/realtek/$RK_WIFIBT_MODULES/* \
 				$TARGET_DIR/lib/firmware/
 		else
-			echo "INFO: $RK_WIFIBT_CHIP isn't bluetooth?"
+			echo "INFO: $RK_WIFIBT_MODULES isn't bluetooth?"
 		fi
 
-		WIFI_KO_DIR=$(echo $RK_WIFIBT_CHIP | tr '[A-Z]' '[a-z]')
+		WIFI_KO_DIR=$(echo $RK_WIFIBT_MODULES | tr '[A-Z]' '[a-z]')
 
 		cp $RKWIFIBT_DIR/drivers/$WIFI_KO_DIR/*.ko \
 			$TARGET_DIR/lib/modules/
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" =~ "CYW" ]];then
+	if [[ "$RK_WIFIBT_MODULES" =~ "CYW" ]];then
 		echo "Copy CYW file to rootfs"
-		cp $RKWIFIBT_DIR/firmware/infineon/$RK_WIFIBT_CHIP/* \
+		cp $RKWIFIBT_DIR/firmware/infineon/$RK_WIFIBT_MODULES/* \
 			$TARGET_DIR/lib/firmware/
 		cp $RKWIFIBT_DIR/drivers/infineon/*.ko \
 			$TARGET_DIR/lib/modules/
 	fi
 
-	if [[ "$RK_WIFIBT_CHIP" =~ "AP6" ]];then
+	if [[ "$RK_WIFIBT_MODULES" =~ "AP6" ]];then
 		echo "Copy AP file to rootfs"
-		cp $RKWIFIBT_DIR/firmware/broadcom/$RK_WIFIBT_CHIP/wifi/* \
+		cp $RKWIFIBT_DIR/firmware/broadcom/$RK_WIFIBT_MODULES/wifi/* \
 			$TARGET_DIR/lib/firmware/
-		cp $RKWIFIBT_DIR/firmware/broadcom/$RK_WIFIBT_CHIP/bt/* \
+		cp $RKWIFIBT_DIR/firmware/broadcom/$RK_WIFIBT_MODULES/bt/* \
 			$TARGET_DIR/lib/firmware/
 		cp $RKWIFIBT_DIR/drivers/bcmdhd/*.ko $TARGET_DIR/lib/modules/
 	fi
@@ -359,6 +359,13 @@ build_wifibt()
 	install_sysv_service $RKWIFIBT_DIR/S36wifibt-init.sh S
 	install_busybox_service $RKWIFIBT_DIR/S36wifibt-init.sh
 	install_systemd_service $RKWIFIBT_DIR/wifibt-init.service
+
+	# Install suspend hook
+	for hook_dir in /usr/lib/pm-utils/sleep.d /lib/systemd/system-sleep; do
+		[ -d "$TARGET_DIR/$hook_dir" ] || continue
+		install -m 0755 $RKWIFIBT_DIR/scripts/wifibt-sleep-hook.sh \
+			"$TARGET_DIR/$hook_dir/03wifibt"
+	done
 
 	# Log collection
 	mkdir -p "$TARGET_DIR/etc/generate_logs.d"

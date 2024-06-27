@@ -16,14 +16,17 @@
 			type         = "firmware";
 			compression  = "none";
 			arch         = "arm";	 // "arm64" or "arm"
-			sys          = "rtt";
 			cpu          = <0x000>;  // mpidr
 			thumb        = <0>;      // 0: arm or thumb2; 1: thumb
 			hyp          = <0>;      // 0: el1/svc; 1: el2/hyp
 			load         = <0x00800000>;
-			size         = <0x02700000>;
-			srambase     = <0xfff88000>;
-			sramsize     = <0x00038000>;
+			compile {
+				size         = <0x02700000>;
+				srambase     = <0xfff88000>;
+				sramsize     = <0x00038000>;
+				sys          = "rtt";
+				rtt_config   = "board/rk3308_ddr2_v10/smp_defconfig"
+			};
 			udelay       = <10000>;
 			hash {
 				algo = "sha256";
@@ -32,9 +35,10 @@
 
 	};
 
-	share_memory {
-		base         = <0x02f00000>;
-		size         = <0x00100000>;
+	share {
+		shm_base         = <0x02f00000>;
+		shm_size         = <0x00100000>;
+		primary = <0x0>;
 	};
 
 	configurations {
@@ -43,7 +47,6 @@
 			description = "Rockchip AMP images";
 			rollback-index = <0x0>;
 			loadables = "amp0";
-			primary = <0x0>;
 
 			signature {
 				algo = "sha256,rsa2048";
