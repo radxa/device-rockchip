@@ -4,6 +4,10 @@ RK_SCRIPTS_DIR="${RK_SCRIPTS_DIR:-$(dirname "$(realpath "$0")")}"
 RK_SDK_DIR="${RK_SDK_DIR:-$RK_SCRIPTS_DIR/../../../..}"
 BUILDROOT_DIR="$RK_SDK_DIR/buildroot"
 
+# Check access to buildroot mirror
+"$RK_SCRIPTS_DIR/check-network.sh" sources.buildroot.net sources.buildroot.net \
+	"Please retry later (it could be down for a while) or setup a VPN to bypass the GFW."
+
 # Check for host linux version
 LINUX_VER_MAJOR=$(uname -r | cut -d'.' -f1)
 LINUX_VER_MINOR=$(uname -r | cut -d'.' -f2)

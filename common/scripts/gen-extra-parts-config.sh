@@ -58,29 +58,24 @@ for i in $(seq 1 $RK_EXTRA_PARTITION_MAX_NUM); do
 menu "Extra partition $i"
 	depends on RK_EXTRA_PARTITION_NUM > $(( $i - 1 ))
 
-config RK_EXTRA_PARTITION_${i}_DEV
-	string "device identifier"
-EOF
-	case $i in
-		1) echo -e "\tdefault \"oem\"" ;;
-		2) echo -e "\tdefault \"userdata\"" ;;
-	esac
-
-	cat <<EOF
-	help
-	  Device identifier, like oem or /dev/mmcblk0p7 or PARTLABEL=oem.
-
 config RK_EXTRA_PARTITION_${i}_NAME
 	string "partition name"
+EOF
+	case $i in
+		1)
+			echo -e "\tdefault \"userdata\" if RK_EXTRA_PARTITION_NUM = 1"
+			echo -e "\tdefault \"oem\"" ;;
+		2) echo -e "\tdefault \"userdata\"" ;;
+	esac
+	cat <<EOF
+
+config RK_EXTRA_PARTITION_${i}_DEV
+	string "device identifier"
+	depends on !RK_EXTRA_PARTITION_${i}_BUILTIN
 	default "auto"
 	help
-	  Partition name, set "auto" to detect from device identifier.
-
-config RK_EXTRA_PARTITION_${i}_NAME_STR
-	string
-	default "\${RK_EXTRA_PARTITION_${i}_DEV##*[/=]}" \\
-		if RK_EXTRA_PARTITION_${i}_NAME = "auto"
-	default RK_EXTRA_PARTITION_${i}_NAME
+	  Device identifier, like <device node> or PARTLABEL=<partition name>
+	  or <partition name> or "auto".
 
 config RK_EXTRA_PARTITION_${i}_MOUNTPOINT
 	string "mountpoint"
@@ -88,18 +83,14 @@ config RK_EXTRA_PARTITION_${i}_MOUNTPOINT
 	help
 	  Mountpoint, set "auto" for "/<name>".
 
-config RK_EXTRA_PARTITION_${i}_MOUNTPOINT_STR
-	string
-	default "/\$RK_EXTRA_PARTITION_${i}_NAME_STR" \\
-		if RK_EXTRA_PARTITION_${i}_MOUNTPOINT = "auto"
-	default RK_EXTRA_PARTITION_${i}_MOUNTPOINT
-
 config RK_EXTRA_PARTITION_${i}_FSTYPE
 	string "filesystem type"
+	depends on !RK_EXTRA_PARTITION_${i}_BUILTIN
 	default "ext4"
 
 config RK_EXTRA_PARTITION_${i}_OPTIONS
 	string "mount options"
+	depends on !RK_EXTRA_PARTITION_${i}_BUILTIN
 	default "defaults"
 
 config RK_EXTRA_PARTITION_${i}_SRC
@@ -112,8 +103,8 @@ EOF
 	default "normal"
 	help
 	  Source dirs, each of them can be either of absolute path(/<dir>) or
-	  relative to <RK_EXTRA_PARTS_DIR> or relative to
-	  <RK_EXTRA_PARTS_DIR>/<part name>.
+	  relative to <RK_CHIP_DIR>|<RK_EXTRA_PARTS_DIR> or relative to
+	  (<RK_CHIP_DIR>|<RK_EXTRA_PARTS_DIR>)/<partition name>.
 EOF
 	fi
 
@@ -121,6 +112,7 @@ EOF
 
 config RK_EXTRA_PARTITION_${i}_SIZE
 	string "image size (size(M|K)|auto(0)|max)"
+	depends on !RK_EXTRA_PARTITION_${i}_BUILTIN
 	default "max" if RK_EXTRA_PARTITION_1_FSTYPE = "ubi"
 	default "auto"
 	help
@@ -133,18 +125,13 @@ config RK_EXTRA_PARTITION_${i}_BUILTIN
 	help
 	  Virtual parition that merged into rootfs.
 
-config RK_EXTRA_PARTITION_${i}_NOPACK
-	bool "skip packing image"
-	depends on !RK_EXTRA_PARTITION_${i}_BUILTIN
-
 config RK_EXTRA_PARTITION_${i}_FEATURES
 	string
-	default "\${RK_EXTRA_PARTITION_${i}_BUILTIN:+builtin,}\${RK_EXTRA_PARTITION_${i}_NOPACK:+nopack,}"
+	default "\${RK_EXTRA_PARTITION_${i}_BUILTIN:+builtin}"
 
 config RK_EXTRA_PARTITION_${i}_STR
 	string
-	depends on RK_EXTRA_PARTITION_${i}_DEV != ""
-	default "\$RK_EXTRA_PARTITION_${i}_DEV:\$RK_EXTRA_PARTITION_${i}_NAME_STR:\$RK_EXTRA_PARTITION_${i}_MOUNTPOINT_STR:\$RK_EXTRA_PARTITION_${i}_FSTYPE:\$RK_EXTRA_PARTITION_${i}_OPTIONS:\${RK_EXTRA_PARTITION_${i}_SRC// /,}:\$RK_EXTRA_PARTITION_${i}_SIZE:\$RK_EXTRA_PARTITION_${i}_FEATURES"
+	default "\${RK_EXTRA_PARTITION_${i}_DEV:-auto}:\$RK_EXTRA_PARTITION_${i}_NAME:\$RK_EXTRA_PARTITION_${i}_MOUNTPOINT:\$RK_EXTRA_PARTITION_${i}_FSTYPE:\$RK_EXTRA_PARTITION_${i}_OPTIONS:\${RK_EXTRA_PARTITION_${i}_SRC// /,}:\$RK_EXTRA_PARTITION_${i}_SIZE:\$RK_EXTRA_PARTITION_${i}_FEATURES"
 
 endmenu # Extra partition $i
 EOF

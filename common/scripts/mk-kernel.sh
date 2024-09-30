@@ -55,6 +55,13 @@ do_build()
 			run_command mv kernel/defconfig \
 				"$KERNEL_CONFIG_DIR/$RK_KERNEL_CFG"
 			;;
+		kernel-modules | modules)
+			MOD_DIR="${2:-$RK_OUTDIR/kernel-modules}"
+			run_command $KMAKE modules
+			run_command $KMAKE modules_install \
+				INSTALL_MOD_PATH="$MOD_DIR"
+			run_command find "$MOD_DIR/lib/modules/" -type l -delete
+			;;
 		kernel*)
 			run_command $KMAKE "$RK_KERNEL_DTS_NAME.img"
 
@@ -82,15 +89,10 @@ do_build()
 
 			[ -z "$DRY_RUN" ] || return 0
 
+			"$RK_SCRIPTS_DIR/check-kernel-dtb.sh"
 			"$RK_SCRIPTS_DIR/check-power-domain.sh"
 			"$RK_SCRIPTS_DIR/check-security.sh" kernel dts
-
-			if [ "$RK_WIFIBT" ] && \
-				! grep -wq wireless-bluetooth "$RK_KERNEL_DTB"; then
-				error "Missing wireless-bluetooth in $RK_KERNEL_DTS!"
-			fi
 			;;
-		modules) run_command $KMAKE modules ;;
 	esac
 }
 
@@ -206,18 +208,18 @@ pack_linux_headers()
 
 	cat << EOF > "$HEADERS_PACK_SCRIPT"
 {
-	# Based on kernel/scripts/package/builddeb
+	# Based on kernel/scripts/package/builddeb (6.1)
 	find . arch/$RK_KERNEL_ARCH -maxdepth 1 -name Makefile\*
-	find include -type f -o -type l
+	find include scripts -type f -o -type l
 	find arch/$RK_KERNEL_ARCH -name module.lds -o -name Kbuild.platforms -o -name Platform
 	find \$(find arch/$RK_KERNEL_ARCH -name include -o -name scripts -type d) -type f
-	find arch/$RK_KERNEL_ARCH/include Module.symvers -type f
+	find arch/$RK_KERNEL_ARCH/include Module.symvers include scripts -type f
 	echo .config
 } | tar --no-recursion --ignore-failed-read -T - \
 	-cf "$HEADERS_TAR"
 
 	# Pack kbuild
-	tar -uf "$HEADERS_TAR" -C "$HEADERS_KBUILD_DIR" scripts/ tools/
+	tar -rf "$HEADERS_TAR" -C "$HEADERS_KBUILD_DIR" scripts/ tools/
 EOF
 
 	run_command cd "$RK_SDK_DIR/kernel"
@@ -232,16 +234,28 @@ EOF
 
 	# Packing .deb package
 	TEMP_DIR="$(mktemp -d)"
-	DEBIAN_ARCH="$KBUILD_ARCH"
+	DEBIAN_ARCH="${KBUILD_ARCH/aarch64/arm64}"
 	DEBIAN_PKG="linux-headers-${RK_KERNEL_VERSION_RAW}-$RK_KERNEL_ARCH"
+	KERNEL_HEADERS_DIR="/usr/src/$DEBIAN_PKG"
 	DEBIAN_DIR="$TEMP_DIR/${DEBIAN_PKG}_$DEBIAN_ARCH"
-	DEBIAN_KBUILD_DIR="$DEBIAN_DIR/usr/src/$DEBIAN_PKG"
+	DEBIAN_HEADERS_DIR="$DEBIAN_DIR/$KERNEL_HEADERS_DIR"
 	DEBIAN_DEB="$DEBIAN_DIR.deb"
 	DEBIAN_CONTROL="$DEBIAN_DIR/DEBIAN/control"
-	mkdir -p "$(dirname "$DEBIAN_CONTROL")" "$DEBIAN_KBUILD_DIR"
 
 	message "Unpacking $HEADERS_TAR ..."
-	tar xf "$HEADERS_TAR" -C "$DEBIAN_KBUILD_DIR"
+
+	mkdir -p "$DEBIAN_HEADERS_DIR"
+	tar xf "$HEADERS_TAR" -C "$DEBIAN_HEADERS_DIR"
+
+	KERNELRELEASE="$(grep -o '".*"' \
+		"$DEBIAN_HEADERS_DIR/include/generated/utsrelease.h" | tr -d '"')"
+	KERNEL_MODULES_DIR="/lib/modules/$KERNELRELEASE"
+
+	mkdir -p "$DEBIAN_DIR/$KERNEL_MODULES_DIR"
+	ln -sf "$KERNEL_HEADERS_DIR" "$DEBIAN_DIR/$KERNEL_MODULES_DIR/build"
+	ln -sf "$KERNEL_HEADERS_DIR" "$DEBIAN_DIR/$KERNEL_MODULES_DIR/source"
+
+	mkdir -p "$(dirname "$DEBIAN_CONTROL")"
 	cat << EOF > "$DEBIAN_CONTROL"
 Package: $DEBIAN_PKG
 Source: linux-rockchip ($RK_KERNEL_VERSION_RAW)
@@ -279,8 +293,9 @@ usage_hook()
 
 	echo -e "kernel[:dry-run]                 \tbuild kernel"
 	echo -e "recovery-kernel[:dry-run]        \tbuild kernel for recovery"
-	echo -e "modules[:dry-run]                \tbuild kernel modules"
-	echo -e "linux-headers[:dry-run]          \tbuild linux-headers"
+	echo -e "kernel-modules[:<dst dir>:dry-run]\tbuild kernel modules"
+	echo -e "modules[:<dst dir>:dry-run]      \talias of kernel-modules"
+	echo -e "linux-headers[:<arch>:dry-run]   \tbuild linux-headers"
 	echo -e "kernel-config[:dry-run]          \tmodify kernel defconfig"
 	echo -e "kconfig[:dry-run]                \talias of kernel-config"
 	echo -e "kernel-make[:<arg1>:<arg2>]      \trun kernel make"
@@ -387,7 +402,7 @@ pre_build_hook_dry()
 	DRY_RUN=1 pre_build_hook $@
 }
 
-BUILD_CMDS="$KERNELS kernel recovery-kernel modules"
+BUILD_CMDS="$KERNELS kernel recovery-kernel kernel-modules modules"
 build_hook()
 {
 	check_config RK_KERNEL RK_KERNEL_CFG || false
@@ -400,7 +415,8 @@ build_hook()
 	case "$1" in
 		recovery-kernel) build_recovery_kernel $@ ;;
 		kernel-*)
-			if [ "$RK_KERNEL_VERSION" != "${1#kernel-}" ]; then
+			if [ "$RK_KERNEL_VERSION" != "${1#kernel-}" ] &&
+				echo $KERNELS | grep -wq "$1"; then
 				warning "Kernel version ${1#kernel-} ignored"
 			fi
 			;&
@@ -434,7 +450,7 @@ post_build_hook()
 
 	# Preparing kernel for linux-headers
 	make_kernel_config
-	run_command $KMAKE Image
+	run_command $KMAKE Image modules_prepare
 
 	if [ "$1" ]; then
 		pack_linux_headers "$1"
@@ -455,11 +471,11 @@ post_build_hook_dry()
 source "${RK_BUILD_HELPER:-$(dirname "$(realpath "$0")")/../build-hooks/build-helper}"
 
 case "${1:-kernel}" in
-	kernel-config | kconfig | kernel-make | kmake) pre_build_hook $@ ;;
-	kernel* | recovery-kernel | modules)
-		init_hook $@
-		build_hook ${@:-kernel}
+	kernel-config | kconfig | kernel-make | kmake) pre_build_hook "$@" ;;
+	kernel* | recovery-kernel | kernel-modules | modules)
+		init_hook "$@"
+		build_hook "${@:-kernel}"
 		;;
-	linux-headers) post_build_hook $@ ;;
+	linux-headers) post_build_hook "$@" ;;
 	*) usage ;;
 esac

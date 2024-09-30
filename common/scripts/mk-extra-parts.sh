@@ -20,6 +20,8 @@ clean_hook()
 POST_BUILD_CMDS="extra-parts"
 post_build_hook()
 {
+	"$RK_SCRIPTS_DIR/check-package.sh" fakeroot
+
 	for idx in $(seq 1 "$(rk_extra_part_num)"); do
 		PART_NAME="$(rk_extra_part_name $idx)"
 		FS_TYPE="$(rk_extra_part_fstype $idx)"
@@ -32,11 +34,6 @@ post_build_hook()
 
 		if rk_extra_part_builtin $idx; then
 			notice "Skip packing $PART_NAME (builtin)"
-			continue
-		fi
-
-		if rk_extra_part_nopack $idx; then
-			notice "Skip packing $PART_NAME (not packing)"
 			continue
 		fi
 
