@@ -44,11 +44,13 @@ install_adbd()
 	echo "export ADB_SECURE=1" >> "$TARGET_DIR/etc/profile.d/adbd.sh"
 
 	if [ -n "$RK_USB_ADBD_PASSWORD" ]; then
+		echo "export ADBD_AUTH_COMMAND=/usr/bin/adbd-auth.sh" >> \
+			"$TARGET_DIR/etc/profile.d/adbd.sh"
 		ADBD_PASSWORD_MD5="$(echo $RK_USB_ADBD_PASSWORD | md5sum)"
-		install -m 0755 "$RK_DATA_DIR/adbd-auth" \
-			"$TARGET_DIR/usr/bin/adbd-auth"
+		install -m 0755 "$OVERLAY_DIR/adbd-auth.sh" \
+			"$TARGET_DIR/usr/bin/adbd-auth.sh"
 		sed -i "s/ADBD_PASSWORD_MD5/$ADBD_PASSWORD_MD5/g" \
-			"$TARGET_DIR/usr/bin/adbd-auth"
+			"$TARGET_DIR/usr/bin/adbd-auth.sh"
 	fi
 
 	[ "$RK_USB_ADBD_KEYS" ] || return 0
@@ -140,6 +142,9 @@ mkdir -p "$TARGET_DIR/etc/profile.d"
 {
 	echo "export USB_FUNCS=\"$(usb_funcs)\""
 	echo "export USB_VENDOR_ID=\"$RK_USB_VID\""
+	if echo "$RK_USB_PID" | grep -iq '^0x'; then
+		echo "export USB_PRODUCT_ID=\"$RK_USB_PID\""
+	fi
 	echo "export USB_FW_VERSION=\"$RK_USB_FW_VER\""
 	echo "export USB_MANUFACTURER=\"$RK_USB_MANUFACTURER\""
 	echo "export USB_PRODUCT=\"$RK_USB_PRODUCT\""
