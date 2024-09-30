@@ -231,9 +231,19 @@ rk_partition_save()
 # Edit raw partition table
 rk_partition_edit()
 {
-	sed -i '1i # name size' "$PART_TABLE"
-	eval ${EDITOR:-vi} "$PART_TABLE"
-	sed -i '/#/d' "$PART_TABLE"
+	TEMP_FILE="$(mktemp)"
+
+	echo "# name size" > "$TEMP_FILE"
+	while read NAME SIZE; do
+		SIZE_STR=$(rk_partition_size_sector_to_readable $SIZE)
+		echo "$NAME $SIZE # $SIZE_STR" >> "$TEMP_FILE"
+	done < "$PART_TABLE"
+
+	eval ${EDITOR:-vi} "$TEMP_FILE"
+
+	sed -i -e "/^#/d" -e "s/[ ]*#.*//" "$TEMP_FILE"
+	mv "$TEMP_FILE" "$PART_TABLE"
+
 	rk_partition_save
 }
 
@@ -412,7 +422,12 @@ rk_extra_part_arg()
 
 rk_extra_part_dev()
 {
-	rk_extra_part_arg ${1:-1} 1
+	DEV=$(rk_extra_part_arg ${1:-1} 1)
+	case "${DEV:-auto}" in
+		/*|*=*) echo $DEV ;;
+		auto) echo PARTLABEL=$(rk_extra_part_name $@) ;;
+		*) echo PARTLABEL=$DEV ;;
+	esac
 }
 
 rk_extra_part_name()
@@ -422,7 +437,11 @@ rk_extra_part_name()
 
 rk_extra_part_mountpoint()
 {
-	rk_extra_part_arg ${1:-1} 3 "/$(rk_extra_part_name $1)"
+	MOUNTPOINT="$(rk_extra_part_arg ${1:-1} 3)"
+	case "${MOUNTPOINT:-auto}" in
+		auto) echo "/$(rk_extra_part_name $@)" ;;
+		*) echo "$MOUNTPOINT" ;;
+	esac
 }
 
 rk_extra_part_fstype()
@@ -443,6 +462,10 @@ rk_extra_part_src()
 			return 0
 		elif echo "$src" | grep -q "^/"; then
 			echo "$src"
+		elif [ -d "$RK_CHIP_DIR/$PART_NAME/$src" ]; then
+			echo "$RK_CHIP_DIR/$PART_NAME/$src"
+		elif [ -d "$RK_CHIP_DIR/$src" ]; then
+			echo "$RK_CHIP_DIR/$src"
 		elif [ -d "$RK_EXTRA_PARTS_DIR/$PART_NAME/$src" ]; then
 			echo "$RK_EXTRA_PARTS_DIR/$PART_NAME/$src"
 		else
@@ -459,11 +482,6 @@ rk_extra_part_size()
 rk_extra_part_builtin()
 {
 	rk_extra_part_arg ${1:-1} 8 | grep -wq builtin
-}
-
-rk_extra_part_nopack()
-{
-	rk_extra_part_arg ${1:-1} 8 | grep -wq nopack
 }
 
 rk_extra_part_outdir()
@@ -501,11 +519,6 @@ rk_extra_part_prepare()
 
 	rm -rf "$OUTDIR" "$DST" "$MOUNT_DIR" "$FAKEROOT_SCRIPT" \
 		"$RK_FIRMWARE_DIR/$(basename "$DST")"
-
-	if rk_extra_part_nopack $1; then
-		notice "Skip preparing $PART_NAME (not packing it)"
-		return 0
-	fi
 
 	mkdir -p "$OUTDIR"
 

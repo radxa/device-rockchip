@@ -67,8 +67,12 @@ build_yocto()
 				echo "include include/wifibt.conf"
 			fi
 
-			if [ "$RK_YOCTO_CHROMIUM" ]; then
-				echo "include include/browser.conf"
+			if [ "$RK_CHIP_HAS_GPU" ]; then
+				if [ "$RK_YOCTO_CHROMIUM" ]; then
+					echo "include include/browser.conf"
+				fi
+			elif [ "$RK_YOCTO_DISPLAY_PLATFORM" = wayland ]; then
+				echo "PACKAGECONFIG:append:pn-weston-init = \" use-pixman\""
 			fi
 
 			echo
@@ -98,8 +102,10 @@ build_yocto()
 		echo "OLDEST_KERNEL := \"$RK_KERNEL_VERSION_RAW\""
 		echo "USE_DEPMOD := \"0\""
 		case "$RK_CHIP_FAMILY" in
-			px30|rk3326|rk3562|rk3566_rk3568|rk3576|rk3588)
+			px30|rk3326|rk3562|rk3566_rk3568|rk3576)
 				echo "MALI_VERSION := \"g13p0\"" ;;
+			rk3588)
+				echo "MALI_VERSION := \"g24p0\"" ;;
 		esac
 	} > build/conf/rksdk_override.conf
 
