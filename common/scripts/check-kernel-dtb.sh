@@ -11,7 +11,6 @@ if [ "$RK_WIFIBT" ] && ! grep -wq wireless-bluetooth "$RK_KERNEL_DTB"; then
 	echo -e "\e[35m"
 	echo "Missing wireless-bluetooth in $RK_KERNEL_DTS(or .dtsi)!"
 	echo -e "\e[0m"
-	exit 1
 fi
 
 if [ "$RK_ROOTFS_TYPE" ] && [ "$RK_ROOTFS_TYPE" != ubi ] && \
