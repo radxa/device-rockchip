@@ -1,0 +1,3 @@
+RK_KERNEL_DTS_NAME="rk3566-radxa-zero-3e"
+RK_PARAMETER="parameter-buildroot-fit.txt"
+RK_USE_FIT_IMG=y
