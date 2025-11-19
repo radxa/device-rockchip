@@ -10,6 +10,7 @@ config RK_WIFIBT_MODULES
 	string
 	default "ALL_AP" if RK_WIFIBT_RTK_AP
 	default "ALL_CY" if RK_WIFIBT_RTK_CYW
+	default "AIC8800D80_USB" if RK_WIFIBT_AIC8800D80
 	default RK_WIFIBT_CHIP if RK_WIFIBT_ON_BOARD
 
 config RK_WIFIBT_CHIP
@@ -21,6 +22,11 @@ choice
 	prompt "supported modules"
 	default RK_WIFIBT_ON_BOARD if RK_WIFIBT_CHIP != ""
 	default RK_WIFIBT_RTK_AP
+
+config RK_WIFIBT_AIC8800D80
+	bool "AIC8800D80 USB"
+	help
+	  AIC8800D80 USB.
 
 config RK_WIFIBT_RTK_AP
 	bool "Realtek and Broadcom(AP6XXX)"
