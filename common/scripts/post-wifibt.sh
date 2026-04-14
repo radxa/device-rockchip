@@ -14,6 +14,7 @@ build_wifibt()
 	message "=========================================="
 
 	RKWIFIBT_DIR="$RK_SDK_DIR/external/rkwifibt"
+	AICWIFIBT_DIR="$RK_SDK_DIR/kernel/drivers/net/wireless/aic"
 
 	echo -e "\e[36m"
 	if find "$RKWIFIBT_DIR"/* -not -user $RK_OWNER_UID | grep ""; then
@@ -368,6 +369,13 @@ build_wifibt()
 		cp $RKWIFIBT_DIR/firmware/broadcom/$RK_WIFIBT_MODULES/bt/* \
 			$TARGET_DIR/lib/firmware/
 		cp $RKWIFIBT_DIR/drivers/bcmdhd/*.ko $TARGET_DIR/lib/modules/
+	fi
+
+	if [[ "$RK_WIFIBT_MODULES" =~ "AIC8800D80-SDIO" ]];then
+		echo "Copy AIC file to rootfs"
+		cp $AICWIFIBT_DIR/aic8800_sdio/aic8800_bsp/*.ko $TARGET_DIR/lib/modules/
+		cp $AICWIFIBT_DIR/aic8800_sdio/aic8800_fdrv/*.ko $TARGET_DIR/lib/modules/
+		cp $AICWIFIBT_DIR/aic8800_sdio/aic8800_btlpm/*.ko $TARGET_DIR/lib/modules/
 	fi
 
 	# Install boot services
